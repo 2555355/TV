@@ -17,20 +17,20 @@ class TvFoxApp : Application() {
     }
 
     private fun initGeckoRuntime() {
+        val cbSettings = org.mozilla.geckoview.ContentBlocking.Settings.Builder()
+            .setEnhancedTrackingProtection(
+                if (SettingsManager.get().doNotTrack)
+                    org.mozilla.geckoview.ContentBlocking.EtpLevel.STRICT
+                else
+                    org.mozilla.geckoview.ContentBlocking.EtpLevel.DEFAULT
+            )
+            .build()
+
         val settings = GeckoRuntimeSettings.Builder()
             .javaScriptEnabled(SettingsManager.get().jsEnabled)
             .aboutConfigEnabled(false)
             .consoleOutput(false)
-            .contentBlocking(
-                org.mozilla.geckoview.ContentBlocking.Settings.Builder()
-                    .enhancedTrackingProtection(
-                        if (SettingsManager.get().doNotTrack)
-                            org.mozilla.geckoview.ContentBlocking.EtpLevel.STRICT
-                        else
-                            org.mozilla.geckoview.ContentBlocking.EtpLevel.DEFAULT
-                    )
-                    .build()
-            )
+            .contentBlocking(cbSettings)
             .configFilePath(getDir("gecko", 0).path)
             .build()
 
