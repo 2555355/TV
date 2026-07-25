@@ -26,19 +26,19 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                style="@style/Text.Title"
+                style="@style/TextTitle"
                 android:textSize="24sp" />
 
             <ImageButton
                 android:id="@+id/btn_add_tab"
-                style="@style/Widget.TvFox.IconButton"
+                style="@style/WidgetTvFoxIconButton"
                 android:src="@drawable/ic_add"
                 android:contentDescription="@string/tab_new"
                 android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btn_close_overlay"
-                style="@style/Widget.TvFox.IconButton"
+                style="@style/WidgetTvFoxIconButton"
                 android:src="@drawable/ic_close"
                 android:contentDescription="@string/tab_close" />
         </LinearLayout>

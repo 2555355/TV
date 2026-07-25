@@ -11,21 +11,21 @@
     <!-- 后退 -->
     <ImageButton
         android:id="@+id/btn_back"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_back"
         android:contentDescription="@string/action_back" />
 
     <!-- 前进 -->
     <ImageButton
         android:id="@+id/btn_forward"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_forward"
         android:contentDescription="@string/action_forward" />
 
     <!-- 刷新 -->
     <ImageButton
         android:id="@+id/btn_reload"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_reload"
         android:contentDescription="@string/action_reload" />
 
@@ -68,35 +68,35 @@
     <!-- 主页 -->
     <ImageButton
         android:id="@+id/btn_home"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_home"
         android:contentDescription="@string/action_home" />
 
     <!-- 书签 -->
     <ImageButton
         android:id="@+id/btn_bookmark"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_bookmark"
         android:contentDescription="@string/action_bookmark" />
 
     <!-- 历史 -->
     <ImageButton
         android:id="@+id/btn_history"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_history"
         android:contentDescription="@string/action_history" />
 
     <!-- 标签页 -->
     <ImageButton
         android:id="@+id/btn_tabs"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_tabs"
         android:contentDescription="@string/action_tabs" />
 
     <!-- 设置 -->
     <ImageButton
         android:id="@+id/btn_settings"
-        style="@style/Widget.TvFox.IconButton"
+        style="@style/WidgetTvFoxIconButton"
         android:src="@drawable/ic_settings"
         android:contentDescription="@string/action_settings" />
 

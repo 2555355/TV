@@ -21,7 +21,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/home_title"
-            style="@style/Text.Title"
+            style="@style/TextTitle"
             android:textSize="28sp" />
 
         <FrameLayout
@@ -63,7 +63,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/bookmarks_title"
-        style="@style/Text.Title"
+        style="@style/TextTitle"
         android:textSize="18sp"
         android:layout_marginBottom="12dp" />
 
