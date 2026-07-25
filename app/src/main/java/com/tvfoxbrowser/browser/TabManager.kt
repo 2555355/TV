@@ -41,7 +41,11 @@ class TabManager(
         val tab = Tab(id = tabId, session = session, url = url)
         tabs.add(tab)
         setActive(tabs.size - 1)
-        if (url != "about:blank") {
+        // about:home 是 UI 层虚拟 URL(由 HomeFragment 显示),
+        // about:blank 是 GeckoView 内置空页,都不需要显式 loadUri。
+        // 若把 about:home 传给 GeckoView,会让 session 进入异常状态,
+        // 后续 loadUri 真实 URL 时可能触发 native 崩溃。
+        if (url != "about:blank" && !url.startsWith("about:home")) {
             session.loadUri(url)
         }
         listener?.onTabListChanged()
@@ -116,7 +120,10 @@ class TabManager(
     fun loadUrl(url: String) {
         val tab = activeTab ?: addTab(url)
         tab.url = url
-        tab.session.loadUri(url)
+        // about:home 不传给 GeckoView(同 addTab 的处理)
+        if (!url.startsWith("about:home")) {
+            tab.session.loadUri(url)
+        }
         listener?.onActiveTabUpdated(tab, TabField.URL)
     }
 
