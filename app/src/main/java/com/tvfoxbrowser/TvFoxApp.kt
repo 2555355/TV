@@ -17,13 +17,10 @@ class TvFoxApp : Application() {
     }
 
     private fun initGeckoRuntime() {
+        // GeckoView 124 的 ContentBlocking.Settings.Builder 通过 categories(int)
+        // 控制 ETP,没有 setEnhancedTrackingProtection 方法。
+        // DNT/ETP 级别在 session 层用 useTrackingProtection 控制(见 GeckoEngine)。
         val cbSettings = org.mozilla.geckoview.ContentBlocking.Settings.Builder()
-            .setEnhancedTrackingProtection(
-                if (SettingsManager.get().doNotTrack)
-                    org.mozilla.geckoview.ContentBlocking.EtpLevel.STRICT
-                else
-                    org.mozilla.geckoview.ContentBlocking.EtpLevel.DEFAULT
-            )
             .build()
 
         val settings = GeckoRuntimeSettings.Builder()
