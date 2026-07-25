@@ -1,0 +1,118 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Debug & Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;34.0.0'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Generate signing keystore
+        run: |
+          if [ ! -f app/release.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore app/release.keystore \
+              -alias tv-fox \
+              -keyalg RSA -keysize 2048 \
+              -validity 10000 \
+              -storepass tvfox123 \
+              -keypass tvfox123 \
+              -dname "CN=TVFoxBrowser, OU=App, O=TVFoxBrowser, L=CN, ST=CN, C=CN"
+          fi
+
+      - name: Sign Release APK
+        run: |
+          BUILD_DIR="app/build/outputs/apk/release"
+          UNSIGNED="$BUILD_DIR/app-release-unsigned.apk"
+          SIGNED="$BUILD_DIR/tv-fox-release.apk"
+
+          if [ -f "$UNSIGNED" ]; then
+            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+              --ks app/release.keystore \
+              --ks-key-alias tv-fox \
+              --ks-pass pass:tvfox123 \
+              --key-pass pass:tvfox123 \
+              --out "$SIGNED" \
+              "$UNSIGNED"
+            echo "Release APK signed: $SIGNED"
+          else
+            echo "Warning: app-release-unsigned.apk not found, skipping signing"
+          fi
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-fox-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-fox-release
+          path: app/build/outputs/apk/release/tv-fox-release.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: TV Fox Browser v1.0.0 Build ${{ github.run_number }}
+          body: |
+            ## TV Fox Browser 自动构建
+
+            基于 GeckoView (Firefox 内核) 的 Android TV 浏览器。
+
+            ### 下载
+            - **Debug 版本**：tv-fox-debug (artifact)
+            - **Release 版本**：tv-fox-release (artifact / 下方附件)
+
+            ### 安装方式
+            1. 下载 APK 文件
+            2. 通过 U盘 或 ADB 安装到 Android TV 设备
+            3. 确保电视已开启「允许安装未知来源应用」
+
+            ### 遥控器操作
+            - **方向键**：D-pad 焦点导航
+            - **OK键**：点击 / 确认
+            - **返回键**：网页后退 / 关闭 Overlay / 退出
+            - **菜单键**：打开设置
+          files: |
+            app/build/outputs/apk/release/tv-fox-release.apk
+            app/build/outputs/apk/debug/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

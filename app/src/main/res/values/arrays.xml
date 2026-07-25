@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="search_engine_names">
+        <item>@string/engine_bing</item>
+        <item>@string/engine_baidu</item>
+        <item>@string/engine_google</item>
+        <item>@string/engine_duckduckgo</item>
+    </string-array>
+    <string-array name="search_engine_ids">
+        <item>bing</item>
+        <item>baidu</item>
+        <item>google</item>
+        <item>duckduckgo</item>
+    </string-array>
+
+    <string-array name="ua_mode_names">
+        <item>@string/ua_tv</item>
+        <item>@string/ua_mobile</item>
+        <item>@string/ua_desktop</item>
+    </string-array>
+    <string-array name="ua_mode_ids">
+        <item>tv</item>
+        <item>mobile</item>
+        <item>desktop</item>
+    </string-array>
+</resources>

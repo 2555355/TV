@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主色 - 深色电视风格 -->
+    <color name="bg_dark">#FF0E1116</color>
+    <color name="bg_card">#FF1A1F26</color>
+    <color name="bg_card_focused">#FF2A6FE0</color>
+    <color name="surface">#FF171B22</color>
+
+    <color name="brand_primary">#FF2A6FE0</color>
+    <color name="brand_secondary">#FF52A8FF</color>
+    <color name="accent">#FFFF8A3D</color>
+
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFB8C0CC</color>
+    <color name="text_hint">#FF6B7480</color>
+
+    <color name="divider">#FF232831</color>
+    <color name="focus_ring">#FFFFFFFF</color>
+    <color name="overlay_dim">#99000000</color>
+</resources>

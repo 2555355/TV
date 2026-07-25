@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="@string/settings_search_engine" app:iconSpaceReserved="false">
+        <ListPreference
+            android:key="search_engine"
+            android:title="@string/settings_search_engine"
+            android:entries="@array/search_engine_names"
+            android:entryValues="@array/search_engine_ids"
+            android:defaultValue="bing" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/settings_ua_mode" app:iconSpaceReserved="false">
+        <ListPreference
+            android:key="ua_mode"
+            android:title="@string/settings_ua_mode"
+            android:entries="@array/ua_mode_names"
+            android:entryValues="@array/ua_mode_ids"
+            android:defaultValue="tv" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/settings_title" app:iconSpaceReserved="false">
+        <SwitchPreference
+            android:key="js_enabled"
+            android:title="@string/settings_js_enabled"
+            android:defaultValue="true" />
+        <SwitchPreference
+            android:key="dnt"
+            android:title="@string/settings_do_not_track"
+            android:defaultValue="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/settings_clear_all" app:iconSpaceReserved="false">
+        <Preference
+            android:key="clear_cache"
+            android:title="@string/settings_clear_cache" />
+        <Preference
+            android:key="clear_cookies"
+            android:title="@string/settings_clear_cookies" />
+        <Preference
+            android:key="clear_history"
+            android:title="@string/settings_clear_history" />
+        <Preference
+            android:key="clear_all"
+            android:title="@string/settings_clear_all" />
+    </PreferenceCategory>
+
+</PreferenceScreen>

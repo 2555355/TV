@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 16:9 TV 适配关键尺寸 -->
+    <dimen name="tv_safe_margin_h">48dp</dimen>
+    <dimen name="tv_safe_margin_v">27dp</dimen>
+    <dimen name="top_bar_height">64dp</dimen>
+    <dimen name="card_width">220dp</dimen>
+    <dimen name="card_height">124dp</dimen>  <!-- 16:9 -->
+    <dimen name="card_corner">8dp</dimen>
+    <dimen name="card_spacing">16dp</dimen>
+    <dimen name="focus_stroke">3dp</dimen>
+
+    <dimen name="tab_thumb_width">240dp</dimen>
+    <dimen name="tab_thumb_height">135dp</dimen> <!-- 16:9 -->
+</resources>

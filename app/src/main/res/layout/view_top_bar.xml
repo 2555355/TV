@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/top_bar_height"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="@dimen/tv_safe_margin_h"
+    android:paddingEnd="@dimen/tv_safe_margin_h"
+    android:background="@color/surface">
+
+    <!-- 后退 -->
+    <ImageButton
+        android:id="@+id/btn_back"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_back"
+        android:contentDescription="@string/action_back" />
+
+    <!-- 前进 -->
+    <ImageButton
+        android:id="@+id/btn_forward"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_forward"
+        android:contentDescription="@string/action_forward" />
+
+    <!-- 刷新 -->
+    <ImageButton
+        android:id="@+id/btn_reload"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_reload"
+        android:contentDescription="@string/action_reload" />
+
+    <!-- 地址栏 -->
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="40dp"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_search_box">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="14dp"
+            android:src="@drawable/ic_search"
+            android:importantForAccessibility="no" />
+
+        <EditText
+            android:id="@+id/address_bar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@null"
+            android:hint="@string/home_search_hint"
+            android:textColorHint="@color/text_hint"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:inputType="textUri|textNoSuggestions"
+            android:imeOptions="actionGo"
+            android:singleLine="true"
+            android:paddingStart="42dp"
+            android:paddingEnd="14dp"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:cursorVisible="true" />
+    </FrameLayout>
+
+    <!-- 主页 -->
+    <ImageButton
+        android:id="@+id/btn_home"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_home"
+        android:contentDescription="@string/action_home" />
+
+    <!-- 书签 -->
+    <ImageButton
+        android:id="@+id/btn_bookmark"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_bookmark"
+        android:contentDescription="@string/action_bookmark" />
+
+    <!-- 历史 -->
+    <ImageButton
+        android:id="@+id/btn_history"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_history"
+        android:contentDescription="@string/action_history" />
+
+    <!-- 标签页 -->
+    <ImageButton
+        android:id="@+id/btn_tabs"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_tabs"
+        android:contentDescription="@string/action_tabs" />
+
+    <!-- 设置 -->
+    <ImageButton
+        android:id="@+id/btn_settings"
+        style="@style/Widget.TvFox.IconButton"
+        android:src="@drawable/ic_settings"
+        android:contentDescription="@string/action_settings" />
+
+</LinearLayout>

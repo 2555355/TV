@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_dark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/tv_safe_margin_h"
+        android:paddingEnd="@dimen/tv_safe_margin_h"
+        android:paddingTop="@dimen/tv_safe_margin_v"
+        android:paddingBottom="@dimen/tv_safe_margin_v">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/settings_title"
+            style="@style/Text.Title"
+            android:textSize="24sp" />
+
+        <ImageButton
+            android:id="@+id/btn_close_settings"
+            style="@style/Widget.TvFox.IconButton"
+            android:src="@drawable/ic_close"
+            android:contentDescription="@string/tab_close" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/settings_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingStart="@dimen/tv_safe_margin_h"
+        android:paddingEnd="@dimen/tv_safe_margin_h"
+        android:paddingBottom="@dimen/tv_safe_margin_v" />
+
+</LinearLayout>
