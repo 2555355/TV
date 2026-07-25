@@ -9,8 +9,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <!-- 声明为 TV 应用(不要求触摸屏) -->
-    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <!-- 声明支持 TV 应用(非必需,允许装在任何设备,包括国产电视盒/普通 Android 桌面) -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
@@ -31,10 +31,17 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
+            android:banner="@drawable/banner"
             android:windowSoftInputMode="adjustResize">
+            <!-- Android TV / Leanback 桌面入口 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- 普通 Android 桌面入口(电视盒/电视棒等非 Leanback 系统) -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
