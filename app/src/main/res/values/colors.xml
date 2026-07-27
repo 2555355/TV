@@ -17,4 +17,7 @@
     <color name="divider">#FF232831</color>
     <color name="focus_ring">#FFFFFFFF</color>
     <color name="overlay_dim">#99000000</color>
+
+    <color name="warning">#FFFFB74D</color>
+    <color name="error">#FFEF5350</color>
 </resources>

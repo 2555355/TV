@@ -5,10 +5,11 @@ import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.commit
 import com.tvfoxbrowser.ui.BrowserFragment
+import com.tvfoxbrowser.ui.ErrorFragment
 
 /**
  * 入口 Activity。
- * - 托管 BrowserFragment
+ * - 托管 BrowserFragment 或 ErrorFragment(内核失败时)
  * - 处理遥控器 BACK / MENU / SEARCH 按键
  * - 初始化各 Manager
  *
@@ -29,13 +30,32 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         if (savedInstanceState == null) {
-            browserFragment = BrowserFragment()
-            supportFragmentManager.commit {
-                replace(R.id.main_container, browserFragment!!)
+            // 检查上次是否有崩溃记录(若有,显示崩溃页而非直接进浏览器)
+            val lastCrash = CrashHandler.readLog()
+            when {
+                !TvFoxApp.isRuntimeReady() -> {
+                    // GeckoRuntime 初始化失败 -> 显示内核错误页
+                    showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.RUNTIME_INIT))
+                }
+                lastCrash != null -> {
+                    // 上次崩溃过 -> 显示崩溃页(用户可查看日志或重启)
+                    showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.CRASH))
+                }
+                else -> {
+                    // 正常启动 -> 进入浏览器
+                    browserFragment = BrowserFragment()
+                    showFragment(browserFragment!!)
+                }
             }
         } else {
             browserFragment = supportFragmentManager
                 .findFragmentById(R.id.main_container) as? BrowserFragment
+        }
+    }
+
+    private fun showFragment(frag: androidx.fragment.app.Fragment) {
+        supportFragmentManager.commit {
+            replace(R.id.main_container, frag)
         }
     }
 

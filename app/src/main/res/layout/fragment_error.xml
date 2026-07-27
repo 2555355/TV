@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+错误页:GeckoRuntime 初始化失败或运行时崩溃时显示。
+包含错误信息 + 崩溃日志查看按钮 + 重启按钮。
+适配电视:大字体、可聚焦按钮、安全边距。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_dark"
+    android:paddingStart="@dimen/tv_safe_margin_h"
+    android:paddingEnd="@dimen/tv_safe_margin_h"
+    android:paddingTop="@dimen/tv_safe_margin_v"
+    android:paddingBottom="@dimen/tv_safe_margin_v"
+    android:gravity="center">
+
+    <ImageView
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:src="@drawable/ic_warning"
+        android:layout_marginBottom="24dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/error_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        style="@style/TextTitle"
+        android:textSize="24sp"
+        android:text="@string/error_runtime_title"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/error_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        android:lineSpacingExtra="4dp"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/error_detail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="@color/text_hint"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:layout_marginBottom="32dp"
+        android:maxLines="6"
+        android:ellipsize="end" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_view_log"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginEnd="16dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:background="@drawable/bg_icon_button"
+            android:textColor="@color/text_primary"
+            android:text="@string/error_view_log" />
+
+        <Button
+            android:id="@+id/btn_restart"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:background="@drawable/bg_icon_button"
+            android:textColor="@color/text_primary"
+            android:text="@string/error_restart" />
+    </LinearLayout>
+
+</LinearLayout>
