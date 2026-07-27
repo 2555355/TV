@@ -67,7 +67,7 @@ class MainActivity : AppCompatActivity(), XWalkInitializer.XWalkInitListener {
     }
 
     /** Crosswalk 初始化完成,可以创建 XWalkView 了 */
-    override fun onXWalkInitComplete() {
+    override fun onXWalkInitCompleted() {
         Log.i(TAG, "XWalk init complete, creating BrowserFragment")
         crosswalkReady = true
         try {

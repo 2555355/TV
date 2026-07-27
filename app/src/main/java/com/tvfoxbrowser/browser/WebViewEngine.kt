@@ -10,11 +10,14 @@ import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ValueCallback
 import android.widget.FrameLayout
 import android.widget.Toast
 import com.tvfoxbrowser.SettingsManager
 import com.tvfoxbrowser.TvFoxApp
 import com.tvfoxbrowser.video.VideoUrlInterceptor
+import org.xwalk.core.CustomViewCallback
+import org.xwalk.core.XWalkJavascriptResult
 import org.xwalk.core.XWalkResourceClient
 import org.xwalk.core.XWalkSettings
 import org.xwalk.core.XWalkUIClient
@@ -65,7 +68,7 @@ object WebViewEngine {
 
     /** 当前正在全屏显示的 View(退出全屏时需要从容器移除) */
     private var currentCustomView: View? = null
-    private var currentCustomViewCallback: XWalkUIClient.CustomViewCallback? = null
+    private var currentCustomViewCallback: CustomViewCallback? = null
 
     /**
      * 视频地址拦截回调(由 BrowserFragment 设置)。
@@ -138,7 +141,6 @@ object WebViewEngine {
                 runCatching { useWideViewPort = true }
                 runCatching { loadWithOverviewMode = true }
                 runCatching { builtInZoomControls = false }
-                runCatching { displayZoomControls = false }
                 runCatching { setSupportZoom(false) }
                 runCatching { mediaPlaybackRequiresUserGesture = false }
                 runCatching { javaScriptCanOpenWindowsAutomatically = true }
@@ -160,28 +162,30 @@ object WebViewEngine {
         }
 
         // 远程调试(同网段电脑 chrome://inspect 可调试)
-        runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                XWalkView.setWebContentsDebuggingEnabled(true)
-            }
-        }
+        // Crosswalk 没有 setWebContentsDebuggingEnabled 静态方法,用实例方法 enableRemoteDebugging
+        runCatching { xWalkView.enableRemoteDebugging() }
 
         runCatching { applyUa(xWalkView) }
 
         // XWalkResourceClient(类似 WebViewClient)
         try {
-            xWalkView.resourceClient = object : XWalkResourceClient(xWalkView) {
+            xWalkView.setResourceClient(object : XWalkResourceClient(xWalkView) {
                 override fun onLoadStarted(view: XWalkView?, url: String?) {
                     callbacks.onProgressChanged(0, isLoading = true)
                     callbacks.onUrlChanged(url.orEmpty())
                     callbacks.onSecurityChanged(url.orEmpty().startsWith("https://"))
                 }
 
+                override fun onProgressChanged(view: XWalkView?, progressInPercent: Int) {
+                    callbacks.onProgressChanged(progressInPercent, isLoading = progressInPercent in 1..99)
+                }
+
                 override fun onLoadFinished(view: XWalkView?, url: String?) {
                     callbacks.onProgressChanged(100, isLoading = false)
                     view?.let {
-                        callbacks.onCanBackChanged(it.canGoBack())
-                        callbacks.onCanForwardChanged(it.canGoForward())
+                        val hist = it.navigationHistory
+                        callbacks.onCanBackChanged(hist.canGoBack())
+                        callbacks.onCanForwardChanged(hist.canGoForward())
                     }
                     // 注入视频拦截 JS(XWalkView 版本)
                     view?.let { v ->
@@ -241,11 +245,7 @@ object WebViewEngine {
 
         // XWalkUIClient(类似 WebChromeClient)
         try {
-            xWalkView.uiClient = object : XWalkUIClient(xWalkView) {
-                override fun onProgressChanged(view: XWalkView?, progressInPercent: Int) {
-                    callbacks.onProgressChanged(progressInPercent, isLoading = progressInPercent in 1..99)
-                }
-
+            xWalkView.setUIClient(object : XWalkUIClient(xWalkView) {
                 override fun onReceivedTitle(view: XWalkView?, title: String?) {
                     callbacks.onTitleChanged(title.orEmpty())
                 }
@@ -335,9 +335,11 @@ object WebViewEngine {
 
                 /** 控制台日志转发到 logcat */
                 override fun onConsoleMessage(
-                    message: String?, lineNumber: Int?, sourceId: String?, messageType: String?
-                ) {
+                    view: XWalkView?, message: String?, lineNumber: Int,
+                    sourceId: String?, messageType: XWalkUIClient.ConsoleMessageType?
+                ): Boolean {
                     Log.d("XWalkConsole", "[$messageType] $message @ $sourceId:$lineNumber")
+                    return true
                 }
             }
         } catch (t: Throwable) {
@@ -384,8 +386,8 @@ object WebViewEngine {
                 it.removeAllViews()
             }
         }
-        currentCustomViewCallback?.let {
-            runCatching { it.onCustomViewHidden() }
+        currentCustomViewCallback?.let { cb ->
+            runCatching { cb.onCustomViewHidden() }
         }
         currentCustomView = null
         currentCustomViewCallback = null

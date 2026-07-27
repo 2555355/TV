@@ -3,6 +3,7 @@ package com.tvfoxbrowser.browser
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import org.xwalk.core.XWalkNavigationHistory
 import org.xwalk.core.XWalkView
 import java.util.concurrent.atomic.AtomicLong
 
@@ -121,16 +122,22 @@ class TabManager(
 
     fun goBack() {
         val xwv = activeTab?.xWalkView ?: return
-        runCatching { if (xwv.canGoBack()) xwv.back() }
+        runCatching {
+            val hist = xwv.navigationHistory
+            if (hist.canGoBack()) hist.navigate(XWalkNavigationHistory.Direction.BACKWARD, 1)
+        }
     }
 
     fun goForward() {
         val xwv = activeTab?.xWalkView ?: return
-        runCatching { if (xwv.canGoForward()) xwv.forward() }
+        runCatching {
+            val hist = xwv.navigationHistory
+            if (hist.canGoForward()) hist.navigate(XWalkNavigationHistory.Direction.FORWARD, 1)
+        }
     }
 
     fun reload() {
-        activeTab?.xWalkView?.let { runCatching { it.reload(it.url) } }
+        activeTab?.xWalkView?.let { runCatching { it.reload(XWalkView.RELOAD_NORMAL) } }
     }
 
     fun stop() {
@@ -155,8 +162,8 @@ class TabManager(
         tab.url = url
         val xwv = tab.xWalkView
         if (xwv != null) {
-            tab.canGoBack = runCatching { xwv.canGoBack() }.getOrDefault(false)
-            tab.canGoForward = runCatching { xwv.canGoForward() }.getOrDefault(false)
+            tab.canGoBack = runCatching { xwv.navigationHistory.canGoBack() }.getOrDefault(false)
+            tab.canGoForward = runCatching { xwv.navigationHistory.canGoForward() }.getOrDefault(false)
         }
         if (tab.id == activeTab?.id) {
             listener?.onActiveTabUpdated(tab, TabField.URL)
