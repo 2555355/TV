@@ -48,7 +48,7 @@ class BrowserFragment :
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        tabManager = TabManager(binding.geckoView).also { it.listener = this }
+        tabManager = TabManager(binding.webViewContainer).also { it.listener = this }
 
         setupTopBar()
         setupAddressBar()
@@ -169,7 +169,7 @@ class BrowserFragment :
 
     private fun showHome(show: Boolean) {
         binding.homeContainer.visibility = if (show) View.VISIBLE else View.GONE
-        binding.geckoView.visibility = if (show) View.GONE else View.VISIBLE
+        binding.webViewContainer.visibility = if (show) View.GONE else View.VISIBLE
         if (show) {
             if (homeFragment == null) {
                 homeFragment = HomeFragment().also { hf ->

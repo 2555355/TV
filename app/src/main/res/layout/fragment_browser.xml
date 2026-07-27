@@ -25,18 +25,17 @@
             android:progressTint="@color/brand_secondary"
             android:visibility="gone" />
 
-        <!-- GeckoView (Firefox 内核) 容器 -->
+        <!-- WebView 容器(系统 WebView,替代 GeckoView) -->
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@color/bg_dark">
 
-            <org.mozilla.geckoview.GeckoView
-                android:id="@+id/gecko_view"
+            <!-- TabManager 会把当前标签页的 WebView 动态 addView 到这里 -->
+            <FrameLayout
+                android:id="@+id/web_view_container"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:focusable="false"
-                android:focusableInTouchMode="false" />
+                android:layout_height="match_parent" />
 
             <!-- 主页门户覆盖层,URL 为 about:home 时显示 -->
             <FrameLayout

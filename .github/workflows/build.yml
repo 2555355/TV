@@ -53,60 +53,41 @@ jobs:
       - name: Sign Release APK
         run: |
           BUILD_DIR="app/build/outputs/apk/release"
+          # 换用系统 WebView 后,build.gradle 已禁用 ABI splits,只产出一个通用 APK:
+          #   app-release-unsigned.apk
           # 显式启用 v1+v2+v3 三种签名方案,兼容 Android 5+ 全部 TV 系统
           # (部分国产 ROM 只认 v1 / 只认 v2,缺失对应方案会「安装失败」)
-          for abi in arm64-v8a armv7; do
-            # abi 到 AGP 输出文件名映射
-            case "$abi" in
-              arm64-v8a) src="$BUILD_DIR/app-arm64-v8a-release-unsigned.apk"; out="$BUILD_DIR/tv-fox-arm64-release.apk" ;;
-              armv7)     src="$BUILD_DIR/app-armeabi-v7a-release-unsigned.apk"; out="$BUILD_DIR/tv-fox-armv7-release.apk" ;;
-            esac
-            echo "Signing $src -> $out"
-            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-              --ks app/release.keystore \
-              --ks-key-alias tv-fox \
-              --ks-pass pass:tvfox123 \
-              --key-pass pass:tvfox123 \
-              --v1-signing-enabled true \
-              --v2-signing-enabled true \
-              --v3-signing-enabled true \
-              --in "$src" \
-              --out "$out"
-            # 验证签名,失败则立即终止,避免上传未签名 / 损坏的 APK
-            $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs "$out" >/dev/null || { echo "VERIFY FAILED: $out"; exit 1; }
-          done
-          echo "Signed APKs:"
-          ls -la "$BUILD_DIR"/tv-fox-*.apk
+          SRC="$BUILD_DIR/app-release-unsigned.apk"
+          OUT="$BUILD_DIR/tv-fox-release.apk"
+          echo "Signing $SRC -> $OUT"
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks app/release.keystore \
+            --ks-key-alias tv-fox \
+            --ks-pass pass:tvfox123 \
+            --key-pass pass:tvfox123 \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --in "$SRC" \
+            --out "$OUT"
+          # 验证签名,失败则立即终止,避免上传未签名 / 损坏的 APK
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs "$OUT" >/dev/null || { echo "VERIFY FAILED: $OUT"; exit 1; }
+          echo "Signed APK:"
+          ls -la "$OUT"
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: tv-fox-debug-arm64
-          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          name: tv-fox-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Upload Debug APK (armv7)
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: tv-fox-debug-armv7
-          path: app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Upload Release APK (arm64)
-        uses: actions/upload-artifact@v4
-        with:
-          name: tv-fox-release-arm64
-          path: app/build/outputs/apk/release/tv-fox-arm64-release.apk
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload Release APK (armv7)
-        uses: actions/upload-artifact@v4
-        with:
-          name: tv-fox-release-armv7
-          path: app/build/outputs/apk/release/tv-fox-armv7-release.apk
+          name: tv-fox-release
+          path: app/build/outputs/apk/release/tv-fox-release.apk
           if-no-files-found: warn
           retention-days: 30
 
@@ -114,16 +95,16 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v1.0.0-${{ github.run_number }}
-          name: TV Fox Browser v1.0.0 Build ${{ github.run_number }}
+          tag_name: v2.1-${{ github.run_number }}
+          name: TV Fox Browser v2.1 Build ${{ github.run_number }}
           body: |
             ## TV Fox Browser 自动构建
 
-            基于 GeckoView (Firefox 内核) 的 Android TV 浏览器。
+            基于 Android 系统 WebView 内核的 TV 浏览器(已弃用 GeckoView)。
 
             ### 下载
-            - **Debug 版本**：tv-fox-debug (artifact)
-            - **Release 版本**：tv-fox-release (artifact / 下方附件)
+            - **Debug 版本**:tv-fox-debug (artifact)
+            - **Release 版本**:tv-fox-release (artifact / 下方附件)
 
             ### 安装方式
             1. 下载 APK 文件
@@ -131,13 +112,16 @@ jobs:
             3. 确保电视已开启「允许安装未知来源应用」
 
             ### 遥控器操作
-            - **方向键**：D-pad 焦点导航
-            - **OK键**：点击 / 确认
-            - **返回键**：网页后退 / 关闭 Overlay / 退出
-            - **菜单键**：打开设置
+            - **方向键**:D-pad 焦点导航
+            - **OK键**:点击 / 确认
+            - **返回键**:网页后退 / 关闭 Overlay / 退出
+            - **菜单键**:打开设置
+
+            ### 崩溃日志
+            若出现闪退,可在电视文件管理器查看:
+            `/Android/data/com.tvfoxbrowser/files/crash/latest.txt`
           files: |
-            app/build/outputs/apk/release/tv-fox-arm64-release.apk
-            app/build/outputs/apk/release/tv-fox-armv7-release.apk
+            app/build/outputs/apk/release/tv-fox-release.apk
           draft: false
           prerelease: false
         env:

@@ -14,7 +14,7 @@ import com.tvfoxbrowser.BookmarkManager
 import com.tvfoxbrowser.HistoryManager
 import com.tvfoxbrowser.R
 import com.tvfoxbrowser.SettingsManager
-import com.tvfoxbrowser.browser.GeckoEngine
+import com.tvfoxbrowser.browser.WebViewEngine
 import com.tvfoxbrowser.browser.TabManager
 
 /**
@@ -52,10 +52,10 @@ class SettingsFragment : DialogFragment() {
         tabManager = tm
     }
 
-    /** UA 模式变更后,对所有现存 session 重新应用 */
+    /** UA 模式变更后,对所有现存 WebView 重新应用 */
     fun reapplyUaOnAllTabs() {
-        tabManager?.allTabs?.forEach {
-            GeckoEngine.applyUaOverride(it.session)
+        tabManager?.allTabs?.forEach { tab ->
+            tab.webView?.let { WebViewEngine.applyUa(it) }
         }
     }
 
@@ -97,12 +97,12 @@ class SettingsFragment : DialogFragment() {
             }
 
             findPreference<Preference>("clear_cache")?.setOnPreferenceClickListener {
-                GeckoEngine.clearCache()
+                WebViewEngine.clearCache()
                 toast(R.string.settings_cleared)
                 true
             }
             findPreference<Preference>("clear_cookies")?.setOnPreferenceClickListener {
-                GeckoEngine.clearCookies()
+                WebViewEngine.clearCookies()
                 toast(R.string.settings_cleared)
                 true
             }
@@ -112,7 +112,7 @@ class SettingsFragment : DialogFragment() {
                 true
             }
             findPreference<Preference>("clear_all")?.setOnPreferenceClickListener {
-                GeckoEngine.clearAllBrowsingData()
+                WebViewEngine.clearAllBrowsingData()
                 HistoryManager.get().clear()
                 toast(R.string.settings_cleared)
                 true
