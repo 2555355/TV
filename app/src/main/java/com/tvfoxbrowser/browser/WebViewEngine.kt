@@ -18,6 +18,7 @@ import com.tvfoxbrowser.TvFoxApp
 import com.tvfoxbrowser.video.VideoUrlInterceptor
 import org.xwalk.core.CustomViewCallback
 import org.xwalk.core.XWalkJavascriptResult
+import org.xwalk.core.XWalkPreferences
 import org.xwalk.core.XWalkResourceClient
 import org.xwalk.core.XWalkSettings
 import org.xwalk.core.XWalkUIClient
@@ -50,6 +51,15 @@ import org.xwalk.core.XWalkWebResourceResponse
  * - createXWalkView 失败时返回 null,调用方决定降级
  */
 object WebViewEngine {
+
+    init {
+        // 远程调试(同网段电脑 chrome://inspect 可调试)
+        // 必须在创建 XWalkView 之前设置,XWalkPreferences.REMOTE_DEBUGGING 是
+        // Crosswalk 暴露的开关(enableRemoteDebugging 实例方法未在 public stub 中暴露)
+        runCatching {
+            XWalkPreferences.setValue(XWalkPreferences.REMOTE_DEBUGGING, true)
+        }
+    }
 
     private const val TAG = "XWalkEngine"
 
@@ -161,9 +171,7 @@ object WebViewEngine {
             Log.w(TAG, "XWalkSettings bulk setup failed", t)
         }
 
-        // 远程调试(同网段电脑 chrome://inspect 可调试)
-        // Crosswalk 没有 setWebContentsDebuggingEnabled 静态方法,用实例方法 enableRemoteDebugging
-        runCatching { xWalkView.enableRemoteDebugging() }
+        // 远程调试:已在 WebViewEngine 的 init 块中通过 XWalkPreferences 设置
 
         runCatching { applyUa(xWalkView) }
 
@@ -238,7 +246,7 @@ object WebViewEngine {
                     }
                     return null  // 不真正拦截,只观察
                 }
-            }
+            })
         } catch (t: Throwable) {
             Log.w(TAG, "setResourceClient failed", t)
         }
@@ -341,7 +349,7 @@ object WebViewEngine {
                     Log.d("XWalkConsole", "[$messageType] $message @ $sourceId:$lineNumber")
                     return true
                 }
-            }
+            })
         } catch (t: Throwable) {
             Log.w(TAG, "setUIClient failed", t)
         }
