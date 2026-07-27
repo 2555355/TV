@@ -53,6 +53,19 @@ class BrowserFragment :
         // 把全屏视频容器注入 WebViewEngine,供 WebChromeClient.onShowCustomView 使用
         WebViewEngine.fullscreenContainer = binding.fullscreenContainer
 
+        // 视频拦截回调:检测到 m3u8/mp4/flv 等视频地址时,调起外部播放器
+        // B 站等视频站的 H5 播放器在 Android 5.1 老 WebView 上无法工作,
+        // 改用 MX Player / VLC 硬解播放
+        WebViewEngine.onVideoFound = { url, title ->
+            activity?.let { act ->
+                com.tvfoxbrowser.video.ExternalPlayerLauncher.launch(
+                    act as android.app.Activity,
+                    url,
+                    title
+                )
+            }
+        }
+
         setupTopBar()
         setupAddressBar()
 
@@ -60,6 +73,12 @@ class BrowserFragment :
         if (savedInstanceState == null) {
             tabManager.addTab("about:home")
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // 解除回调,避免 Fragment 销毁后还被回调导致泄漏
+        WebViewEngine.onVideoFound = null
     }
 
     private fun setupTopBar() {

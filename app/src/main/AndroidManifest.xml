@@ -8,6 +8,10 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- Android 11+ 检查 MX Player / VLC 是否安装需要此权限;
+         5.1 不需要,自动忽略。 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <!-- 声明支持 TV 应用(非必需,允许装在任何设备,包括国产电视盒/普通 Android 桌面) -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -53,5 +57,13 @@
                 <data android:scheme="https" />
             </intent-filter>
         </activity>
+
+        <!-- 内置视频播放 Activity(降级方案:无外部播放器时用 MediaPlayer) -->
+        <activity
+            android:name=".video.VideoHostActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
     </application>
 </manifest>

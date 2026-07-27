@@ -67,4 +67,11 @@
     <!-- 提示 -->
     <string name="loading">加载中…</string>
     <string name="permission_request">需要权限才能继续</string>
+
+    <!-- 视频播放 -->
+    <string name="video_back_to_browser">返回浏览器</string>
+    <string name="video_no_external_player_hint">未安装 MX Player/VLC,使用内置播放器(可能较卡)</string>
+    <string name="video_loading">正在加载视频…</string>
+    <string name="video_error">视频无法播放: %1$s</string>
+    <string name="video_play_failed">播放失败,建议安装 MX Player 或 VLC</string>
 </resources>

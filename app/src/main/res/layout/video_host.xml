@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  内置视频播放器布局(降级方案):
+  - SurfaceView 全屏显示视频
+  - 顶部一个返回浮窗(支持遥控器焦点)
+  - 加载/错误提示居中
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
+
+    <!-- 视频画面 -->
+    <SurfaceView
+        android:id="@+id/surface_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- 返回按钮浮窗(左上角,遥控器焦点可选中) -->
+    <ImageButton
+        android:id="@+id/btn_back"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="@dimen/tv_safe_margin_h"
+        android:layout_marginTop="@dimen/tv_safe_margin_v"
+        android:src="@drawable/ic_back"
+        android:background="@drawable/bg_video_fab"
+        android:scaleType="centerInside"
+        android:padding="14dp"
+        android:contentDescription="@string/video_back_to_browser"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:clickable="true" />
+
+    <!-- 加载/错误提示 -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:shadowColor="#000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="2"
+        android:padding="16dp"
+        android:visibility="gone" />
+
+</FrameLayout>

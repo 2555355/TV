@@ -11,8 +11,8 @@ android {
         applicationId "com.tvfoxbrowser"
         minSdk 21
         targetSdk 34
-        versionCode 10
-        versionName "2.5"
+        versionCode 11
+        versionName "2.6"
         // 只保留中英语言资源,移除 AndroidX 自带的其他语言
         resourceConfigurations += ['zh', 'zh-rCN', 'zh-rTW', 'en']
     }

@@ -21,6 +21,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import com.tvfoxbrowser.SettingsManager
+import com.tvfoxbrowser.video.VideoUrlInterceptor
 
 /**
  * 系统 WebView 内核封装(替代 GeckoView)。
@@ -68,6 +69,23 @@ object WebViewEngine {
     private var currentCustomViewCallback: WebChromeClient.CustomViewCallback? = null
 
     /**
+     * 视频地址拦截回调(由 BrowserFragment 设置)。
+     *
+     * 当 VideoUrlInterceptor 检测到 m3u8/mp4/flv 等视频地址时回调,
+     * BrowserFragment 在此启动外部播放器(MX Player / VLC)。
+     *
+     * 为 null 时不拦截视频(默认)。
+     */
+    @Volatile
+    var onVideoFound: ((url: String, title: String?) -> Unit)? = null
+
+    /** 每个 WebView 对应的拦截器(注入 JS + 网络层兜底) */
+    private val interceptors = mutableMapOf<WebView, VideoUrlInterceptor>()
+
+    /** 主线程 Handler(把视频拦截回调切到主线程启动外部播放器) */
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /**
      * 检测系统 WebView 是否可用。
      * 国产电视 ROM 偶尔会阉割 WebView 包(/system/app/webview 缺失或被禁用),
      * 此时创建 WebView 会抛 ClassNotFoundException / Resources$NotFoundException。
@@ -103,6 +121,16 @@ object WebViewEngine {
             Log.e(TAG, "WebView instantiation failed", t)
             return null
         }
+
+        // 为该 WebView 创建视频拦截器(JS 注入 + 网络层兜底)
+        val interceptor = VideoUrlInterceptor { url, title ->
+            // 主线程回调(BrowserFragment 在此启动外部播放器)
+            mainHandler.post {
+                Log.i(TAG, "Video intercepted, dispatching to launcher: $url")
+                onVideoFound?.invoke(url, title)
+            }
+        }
+        synchronized(interceptors) { interceptors[webView] = interceptor }
 
         try {
             webView.layoutParams = ViewGroup.LayoutParams(
@@ -200,12 +228,28 @@ object WebViewEngine {
                     }
                     // 同步 Cookie 到持久化(B 站登录态依赖)
                     runCatching { CookieManager.getInstance().flush() }
+                    // 注入视频拦截 JS(每个页面加载完后重新注入,SPA 路由切换也会触发)
+                    view?.let { v ->
+                        synchronized(interceptors) { interceptors[v] }?.injectJs(v)
+                    }
                 }
 
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
                 ): Boolean = false
+
+                /** 网络层兜底拦截:所有请求都会经过这里,捕获 JS 层漏掉的视频 URL */
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    if (view != null && request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        synchronized(interceptors) { interceptors[view] }
+                            ?.maybeInterceptRequest(request)
+                    }
+                    return null  // 不真正拦截,只观察
+                }
 
                 /** SSL 证书错误:默认 WebView 会取消加载,导致 https 站点完全打不开。
                  *  这里弹框让用户决定是否继续(国产 ROM 老 WebView 证书链校验常误报)。
