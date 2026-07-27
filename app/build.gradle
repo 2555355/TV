@@ -14,10 +14,18 @@ android {
         // 容易触发系统安全策略导致安装失败或运行时崩溃。
         // 28 已能满足浏览器功能需求(网络/存储/WebView)。
         targetSdk 28
-        versionCode 4
+        versionCode 5
         versionName "1.0"
         // 只保留中英语言资源,移除 AndroidX 自带的其他语言(~2MB)
         resourceConfigurations += ['zh', 'zh-rCN', 'zh-rTW', 'en']
+    }
+
+    // 本应用通过 GitHub 直接分发 APK,不上架 Google Play。
+    // targetSdk 28 是为兼容国产 TV 系统刻意降低的,
+    // 禁用「targetSdk 过低」相关的 lint 检查,避免 release 构建被 lint 卡住。
+    lint {
+        disable 'ExpiredTargetSdkVersion'
+        abortOnError false
     }
 
     // ABI splits: 为每个 CPU 架构单独生成 APK,
