@@ -3,20 +3,17 @@ package com.tvfoxbrowser.video
 import android.os.Build
 import android.util.Log
 import android.webkit.JavascriptInterface
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.annotation.RequiresApi
+import org.xwalk.core.XWalkView
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 视频地址拦截器。
+ * 视频地址拦截器(同时支持系统 WebView 和 Crosswalk XWalkView)。
  *
  * 三道防线拦截视频 URL:
  * 1. JS 注入监听 video.src 属性变化(B 站等大部分站点)
  * 2. JS Hook XMLHttpRequest 和 fetch(拦截 m3u8 动态请求)
- * 3. shouldInterceptRequest 网络层兜底
+ * 3. shouldInterceptRequest 网络层兜底(由调用方在外层实现)
  *
  * 拦截到后回调 onVideoFound,由 BrowserFragment 调起 ExternalPlayerLauncher。
  *
@@ -36,66 +33,37 @@ class VideoUrlInterceptor(
     private val JS_OBJECT_NAME = "TvFoxVideo"
 
     /**
-     * 在 onPageFinished 注入 JS,监听 video.src 和 XHR/fetch。
-     *
-     * 注入时机选 onPageFinished 而非 onPageStarted:
-     * - onPageStarted 时 DOM 还没构建完,querySelector 找不到 video
-     * - 注入太早可能被站点 CSP 拦截
+     * 在页面加载完成后注入 JS,监听 video.src 和 XHR/fetch。
+     * 同时支持系统 WebView 和 Crosswalk XWalkView(都用同样的 JS API)。
      */
     fun injectJs(webView: WebView) {
-        // 1. 注册 JS 接口(Android 4.2+ 的 @JavascriptInterface 安全机制)
-        // 注意:addJavascriptInterface 必须在主线程,且一个 WebView 只能注册一次同名对象
         try {
             webView.removeJavascriptInterface(JS_OBJECT_NAME)
             webView.addJavascriptInterface(JsCallback(), JS_OBJECT_NAME)
+            webView.evaluateJavascript(buildJsHook(), null)
         } catch (t: Throwable) {
-            Log.w(TAG, "addJavascriptInterface failed", t)
+            Log.w(TAG, "WebView injectJs failed", t)
         }
+    }
 
-        // 2. 注入监听脚本
-        val js = buildJsHook()
+    /** 给 XWalkView 用的注入方法 */
+    fun injectJs(xWalkView: XWalkView) {
         try {
-            webView.evaluateJavascript(js, null)
-            Log.d(TAG, "JS hook injected")
+            // XWalkView 的 addJavascriptInterface 与 WebView 等价
+            xWalkView.addJavascriptInterface(JsCallback(), JS_OBJECT_NAME)
+            // XWalkView.evaluateJavascript 返回值通过 ValueCallback
+            xWalkView.evaluateJavascript(buildJsHook()) { /* 忽略结果 */ }
         } catch (t: Throwable) {
-            // Android 4.4 以下没有 evaluateJavascript,用 loadURL("javascript:") 兜底
-            Log.w(TAG, "evaluateJavascript failed, fallback to loadUrl", t)
-            try {
-                webView.loadUrl("javascript:" + js)
-            } catch (_: Throwable) {}
+            Log.w(TAG, "XWalkView injectJs failed", t)
         }
     }
 
     /**
-     * 网络层兜底拦截:WebResourceRequest 是网络层所有请求都会经过的。
-     * 注意:只在 API 21+ 的 shouldInterceptRequest 里调用。
+     * 网络层兜底拦截:由外层 WebViewClient/XWalkResourceClient 调用,
+     * 把可能漏掉的视频 URL 上报一次(内部有去重)。
      */
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    fun maybeInterceptRequest(request: WebResourceRequest): WebResourceResponse? {
-        try {
-            val url = request.url?.toString() ?: return null
-            if (isVideoUrl(url)) {
-                Log.d(TAG, "Network layer caught video URL: $url")
-                onVideoFound(url, null)
-            }
-        } catch (_: Throwable) {}
-        // 永远返回 null:不真正拦截请求,只观察
-        // 真正拦截会导致 B 站播放器卡死,我们要的是"边播边报"
-        return null
-    }
-
-    /** 判断 URL 是否是视频地址 */
-    private fun isVideoUrl(url: String): Boolean {
-        if (url.isBlank()) return false
-        val lower = url.substringBefore('?').lowercase()
-        return lower.endsWith(".m3u8") ||
-               lower.endsWith(".flv") ||
-               lower.endsWith(".mp4") ||
-               lower.endsWith(".m4v") ||
-               lower.endsWith(".mkv") ||
-               lower.endsWith(".webm") ||
-               lower.contains("/flv/") ||
-               lower.contains(".m3u8?")
+    fun reportVideoUrl(url: String) {
+        reportOnce(url, null)
     }
 
     /** 去重后回调 */
@@ -119,12 +87,26 @@ class VideoUrlInterceptor(
         onVideoFound(url, title)
     }
 
+    /** 判断 URL 是否是视频地址 */
+    private fun isVideoUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val lower = url.substringBefore('?').lowercase()
+        return lower.endsWith(".m3u8") ||
+               lower.endsWith(".flv") ||
+               lower.endsWith(".mp4") ||
+               lower.endsWith(".m4v") ||
+               lower.endsWith(".mkv") ||
+               lower.endsWith(".webm") ||
+               lower.contains("/flv/") ||
+               lower.contains(".m3u8?")
+    }
+
     /**
      * JS 注入脚本。
      * 关键点:
      * - 用 Object.defineProperty 劫持 video.src 的 setter
      * - Hook XMLHttpRequest.open 和 fetch
-     * - MutationObserver 监听新插入的 video 标签(动态加载的视频)
+     * - MutationObserver 监听新插入的 video 标签
      * - try/catch 包裹,任一步失败不影响页面
      */
     private fun buildJsHook(): String = """
@@ -135,10 +117,8 @@ class VideoUrlInterceptor(
     function report(url) {
         try {
             if (typeof url !== 'string' || !url) return;
-            // 过滤明显不是视频的
             var lower = url.split('?')[0].toLowerCase();
             if (!(/\.(m3u8|flv|mp4|m4v|mkv|webm)(\?|$)/.test(lower))) return;
-            // 相对路径转绝对
             var abs = new URL(url, location.href).href;
             window.TvFoxVideo && window.TvFoxVideo.onVideo(abs);
         } catch(e) {}
@@ -162,9 +142,7 @@ class VideoUrlInterceptor(
                 });
             }
         } catch(e) {}
-        // 已存在的 src
         if (v.src) report(v.src);
-        // 监听 source 标签变化
         v.addEventListener('loadstart', function() {
             try { if (v.currentSrc) report(v.currentSrc); } catch(e) {}
         });
@@ -228,7 +206,6 @@ class VideoUrlInterceptor(
     try { hookAllVideos(); } catch(e) {}
     try { hookMutation(); } catch(e) {}
 
-    // B 站等 SPA 站点会在路由切换后延迟插入 video,定时轮询兜底
     try {
         setInterval(function() {
             try { hookAllVideos(); } catch(e) {}

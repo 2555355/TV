@@ -2,3 +2,15 @@ plugins {
     id 'com.android.application' version '8.1.4' apply false
     id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
 }
+
+// Crosswalk 嵌入式内核(自带 Chromium 53 + MSE/H.264/HLS)
+// 官方源已下线,用 louisgeek 镜像(修改版,补丁:修复无 SSL 证书 https 站点访问)
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // 阿里云镜像(国内 CI 更快),GitHub raw 备用
+        maven { url 'https://code.aliyun.com/louisgeek/maven/raw/master' }
+        maven { url 'https://raw.githubusercontent.com/louisgeek/maven/master' }
+    }
+}

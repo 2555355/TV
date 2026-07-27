@@ -1,17 +1,14 @@
 package com.tvfoxbrowser.browser
 
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
+import org.xwalk.core.XWalkView
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 标签页管理器。持有多个 Tab(每个对应一个 WebView),
- * 同一时刻只有一个 Tab 的 WebView 附加到容器 ViewGroup。
- *
- * 与 GeckoView 版本的差异:
- * - GeckoView 用 setSession 切换标签页(单一 GeckoView 持有当前 session)
- * - WebView 版本直接 addView/removeView 切换 WebView(每个 Tab 独立实例)
+ * 标签页管理器。持有多个 Tab(每个对应一个 XWalkView),
+ * 同一时刻只有一个 Tab 的 XWalkView 附加到容器 ViewGroup。
  *
  * 通过 [listener] 把 UI 相关变更回调给 BrowserFragment。
  */
@@ -41,14 +38,14 @@ class TabManager(
     fun addTab(url: String = "about:blank"): Tab {
         val tabId = idGen.getAndIncrement()
         val callbacks = SessionCallbackAggregator(tabId, this)
-        val webView = WebViewEngine.createWebView(callbacks)
-        val tab = Tab(id = tabId, webView = webView, url = url)
+        val xWalkView = WebViewEngine.createWebView(callbacks)
+        val tab = Tab(id = tabId, xWalkView = xWalkView, url = url)
         tabs.add(tab)
         setActive(tabs.size - 1)
         // about:home 是 UI 层虚拟 URL(由 HomeFragment 显示),
-        // about:blank 是 WebView 内置空页,都不需要显式 loadUrl。
-        if (webView != null && url != "about:blank" && !url.startsWith("about:home")) {
-            runCatching { webView.loadUrl(url) }
+        // about:blank 是 XWalkView 内置空页,都不需要显式 loadUrl。
+        if (xWalkView != null && url != "about:blank" && !url.startsWith("about:home")) {
+            runCatching { xWalkView.loadUrl(url) }
                 .onFailure { Log.e(TAG, "loadUrl failed", it) }
         }
         listener?.onTabListChanged()
@@ -58,15 +55,13 @@ class TabManager(
     /** 切换到指定索引的标签页 */
     fun setActive(index: Int) {
         if (index !in tabs.indices) return
-        // 已经是当前活动标签且 WebView 已在容器中,直接返回
         val target = tabs[index]
-        val wv = target.webView
-        if (index == activeIndex && wv?.parent == container) return
+        val xwv = target.xWalkView
+        if (index == activeIndex && xwv?.parent == container) return
 
-        // 移除当前容器里的所有 WebView(只有一个),加入目标的
-        detachAllWebViews()
-        if (wv != null) {
-            runCatching { container.addView(wv) }
+        detachAllXWalkViews()
+        if (xwv != null) {
+            runCatching { container.addView(xwv) }
                 .onFailure { Log.e(TAG, "addView failed", it) }
         }
         activeIndex = index
@@ -88,10 +83,10 @@ class TabManager(
         val idx = tabs.indexOfFirst { it.id == id }
         if (idx < 0) return
         val closing = tabs.removeAt(idx)
-        closing.webView?.let { wv ->
+        closing.xWalkView?.let { xwv ->
             runCatching {
-                (wv.parent as? ViewGroup)?.removeView(wv)
-                wv.destroy()
+                (xwv.parent as? ViewGroup)?.removeView(xwv)
+                xwv.onDestroy()
             }
         }
 
@@ -101,7 +96,6 @@ class TabManager(
             listener?.onActiveTabChanged(addTab("about:home"))
             return
         }
-        // 调整活动索引
         if (idx <= activeIndex) {
             activeIndex = (activeIndex - 1).coerceAtLeast(0)
         }
@@ -112,10 +106,10 @@ class TabManager(
     /** 关闭全部,保留一个空白页 */
     fun closeAll() {
         tabs.forEach { tab ->
-            tab.webView?.let { wv ->
+            tab.xWalkView?.let { xwv ->
                 runCatching {
-                    (wv.parent as? ViewGroup)?.removeView(wv)
-                    wv.destroy()
+                    (xwv.parent as? ViewGroup)?.removeView(xwv)
+                    xwv.onDestroy()
                 }
             }
         }
@@ -126,30 +120,29 @@ class TabManager(
     }
 
     fun goBack() {
-        val wv = activeTab?.webView ?: return
-        runCatching { if (wv.canGoBack()) wv.goBack() }
+        val xwv = activeTab?.xWalkView ?: return
+        runCatching { if (xwv.canGoBack()) xwv.back() }
     }
 
     fun goForward() {
-        val wv = activeTab?.webView ?: return
-        runCatching { if (wv.canGoForward()) wv.goForward() }
+        val xwv = activeTab?.xWalkView ?: return
+        runCatching { if (xwv.canGoForward()) xwv.forward() }
     }
 
     fun reload() {
-        activeTab?.webView?.let { runCatching { it.reload() } }
+        activeTab?.xWalkView?.let { runCatching { it.reload(it.url) } }
     }
 
     fun stop() {
-        activeTab?.webView?.let { runCatching { it.stopLoading() } }
+        activeTab?.xWalkView?.let { runCatching { it.stopLoading() } }
     }
 
     fun loadUrl(url: String) {
         val tab = activeTab ?: addTab(url)
         tab.url = url
-        // about:home 不传给 WebView(同 addTab 的处理)
         if (!url.startsWith("about:home")) {
-            tab.webView?.let { wv ->
-                runCatching { wv.loadUrl(url) }
+            tab.xWalkView?.let { xwv ->
+                runCatching { xwv.loadUrl(url) }
                     .onFailure { Log.e(TAG, "loadUrl failed", it) }
             }
         }
@@ -160,11 +153,10 @@ class TabManager(
     override fun onUrlChanged(tabId: Long, url: String) {
         val tab = tabs.firstOrNull { it.id == tabId } ?: return
         tab.url = url
-        // WebView 的 canGoBack/canGoForward 在 URL 变化时也要更新
-        val wv = tab.webView
-        if (wv != null) {
-            tab.canGoBack = runCatching { wv.canGoBack() }.getOrDefault(false)
-            tab.canGoForward = runCatching { wv.canGoForward() }.getOrDefault(false)
+        val xwv = tab.xWalkView
+        if (xwv != null) {
+            tab.canGoBack = runCatching { xwv.canGoBack() }.getOrDefault(false)
+            tab.canGoForward = runCatching { xwv.canGoForward() }.getOrDefault(false)
         }
         if (tab.id == activeTab?.id) {
             listener?.onActiveTabUpdated(tab, TabField.URL)
@@ -178,7 +170,6 @@ class TabManager(
         if (tab.id == activeTab?.id) {
             listener?.onActiveTabUpdated(tab, TabField.TITLE)
         } else {
-            // 后台标签页标题更新,通知列表刷新缩略图标题
             listener?.onTabListChanged()
         }
     }
@@ -218,10 +209,10 @@ class TabManager(
 
     fun destroy() {
         tabs.forEach { tab ->
-            tab.webView?.let { wv ->
+            tab.xWalkView?.let { xwv ->
                 runCatching {
-                    (wv.parent as? ViewGroup)?.removeView(wv)
-                    wv.destroy()
+                    (xwv.parent as? ViewGroup)?.removeView(xwv)
+                    xwv.onDestroy()
                 }
             }
         }
@@ -229,13 +220,12 @@ class TabManager(
         activeIndex = -1
     }
 
-    /** 把容器里所有 WebView 移除(但不 destroy,保留状态用于后台标签) */
-    private fun detachAllWebViews() {
+    /** 把容器里所有 XWalkView 移除(但不 destroy,保留状态用于后台标签) */
+    private fun detachAllXWalkViews() {
         for (i in 0 until container.childCount) {
             val child = container.getChildAt(i)
-            if (child is WebView) {
+            if (child is XWalkView) {
                 container.removeView(child)
-                // removeView 会改变 childCount,移除后需要重新从 0 开始
                 break
             }
         }
