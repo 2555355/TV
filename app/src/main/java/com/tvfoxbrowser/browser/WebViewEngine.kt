@@ -53,8 +53,10 @@ object WebViewEngine {
     private const val TV_UA =
         "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+    /** 桌面端 UA(默认):用 Windows + Chrome,确保站点返回桌面版而非手机版
+     *  之前用 Linux UA 部分站点会返回 Linux 专属简化页,改 Windows 兼容性更好 */
     private const val DESKTOP_UA =
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     /** 当前全屏视频宿主容器(由 BrowserFragment 设置,用于 WebChromeClient.onShowCustomView) */
     @Volatile

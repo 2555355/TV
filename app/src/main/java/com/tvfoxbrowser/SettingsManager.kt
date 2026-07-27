@@ -18,9 +18,11 @@ class SettingsManager private constructor(context: Context) {
         get() = prefs.getString(KEY_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE) ?: DEFAULT_SEARCH_ENGINE
         set(value) = prefs.edit { putString(KEY_SEARCH_ENGINE, value) }
 
-    /** UA 模式: mobile / desktop / tv */
+    /** UA 模式: mobile / desktop / tv
+     *  默认 desktop:大部分网站不识别 SmartTV UA,会回退到手机版,
+     *  用桌面 UA 拿到的网页更完整,TV 遥控器也能正常操作。 */
     var uaMode: String
-        get() = prefs.getString(KEY_UA_MODE, UA_TV) ?: UA_TV
+        get() = prefs.getString(KEY_UA_MODE, UA_DESKTOP) ?: UA_DESKTOP
         set(value) = prefs.edit { putString(KEY_UA_MODE, value) }
 
     var jsEnabled: Boolean
