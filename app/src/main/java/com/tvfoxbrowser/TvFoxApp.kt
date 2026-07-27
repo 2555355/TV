@@ -28,7 +28,14 @@ class TvFoxApp : Application() {
             .aboutConfigEnabled(false)
             .consoleOutput(false)
             .contentBlocking(cbSettings)
-            .configFilePath(getDir("gecko", 0).path)
+            // 关键修复:传入 --safe-mode 参数。
+            // 国产电视/电视盒的 GPU 驱动有 bug,GeckoView 默认启用 WebRender + GPU
+            // compositor,会在启动后几秒触发 native SIGSEGV(Java 层抓不到,直接闪退)。
+            // --safe-mode 会禁用硬件加速、WebGL,强制软件渲染,避免 GPU 驱动崩溃。
+            // 副作用:JIT 也被禁用,JS 执行变慢,但能保证不闪退。
+            // 用 arguments API(公开稳定),比 configFilePath 可靠(configFilePath 默认
+            // 只在 debuggable=true 时读取,显式指定路径又涉及文件写入,容易出错)。
+            .arguments(arrayOf("--safe-mode"))
             .build()
 
         geckoRuntime = GeckoRuntime.create(this, settings)
