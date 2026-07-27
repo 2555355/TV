@@ -61,7 +61,7 @@ class ErrorFragment : Fragment() {
                 binding.errorTitle.setText(R.string.error_crash_title)
                 binding.errorMessage.setText(R.string.error_crash_message)
                 binding.errorDetail.text = CrashHandler.readLog()
-                    ?.lineSequence()?.takeLast(20)?.joinToString("\n")
+                    ?.lines()?.takeLast(20)?.joinToString("\n")
                     ?: getString(R.string.error_log_empty)
             }
         }
