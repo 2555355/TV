@@ -51,12 +51,13 @@ object WebViewEngine {
 
     /** 电视端 UA:让站点识别为 Android TV */
     private const val TV_UA =
-        "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-    /** 桌面端 UA(默认):用 Windows + Chrome,确保站点返回桌面版而非手机版
-     *  之前用 Linux UA 部分站点会返回 Linux 专属简化页,改 Windows 兼容性更好 */
+    /** 桌面端 UA(默认):用 Windows + Chrome 124,确保站点返回桌面版而非手机版
+     *  - Chrome/124 是 2024 年版本,绝大多数站点都识别
+     *  - 加完整 Win64 x64 避免被识别为平板 */
     private const val DESKTOP_UA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
     /** 当前全屏视频宿主容器(由 BrowserFragment 设置,用于 WebChromeClient.onShowCustomView) */
     @Volatile
@@ -123,8 +124,8 @@ object WebViewEngine {
                 runCatching { javaScriptEnabled = SettingsManager.get().jsEnabled }
                 runCatching { domStorageEnabled = true }       // localStorage/sessionStorage,B站必须
                 runCatching { databaseEnabled = true }         // WebSQL/IndexedDB 老接口
-                runCatching { useWideViewPort = true }
-                runCatching { loadWithOverviewMode = true }
+                runCatching { useWideViewPort = true }         // 桌面页面按 viewport 缩放
+                runCatching { loadWithOverviewMode = true }    // 默认缩放到屏幕宽
                 runCatching { cacheMode = WebSettings.LOAD_DEFAULT }
                 runCatching { builtInZoomControls = false }
                 runCatching { displayZoomControls = false }
@@ -133,6 +134,14 @@ object WebViewEngine {
                 // 老站点文件/内容访问
                 runCatching { allowFileAccess = true }
                 runCatching { allowContentAccess = true }
+                // 视频站必需:允许 JS 自动打开窗口、跨域
+                runCatching { javaScriptCanOpenWindowsAutomatically = true }
+                runCatching { setSupportMultipleWindows(false) }
+                // B 站播放器需要的额外设置
+                runCatching { blockNetworkImage = false }       // 不要拦截图片
+                runCatching { loadsImagesAutomatically = true } // 自动加载图片
+                // 老 Android 上的 Geolocation/FormData(部分站点登录需要)
+                runCatching { setGeolocationEnabled(true) }
                 // AppCache:Android 5.1 老 WebView 必须显式开,否则部分站点资源加载失败。
                 // 但 setAppCacheEnabled/setAppCachePath 在 compileSdk 26 弃用,
                 // compileSdk 34 已被 Kotlin 编译器彻底移除,这里用反射调用。
@@ -154,6 +163,14 @@ object WebViewEngine {
             }
         } catch (t: Throwable) {
             Log.w(TAG, "WebSettings bulk setup failed", t)
+        }
+
+        // 远程调试:电视上没 adb 时,可用 chrome://inspect 在同网段电脑调试
+        // 排查「页面黑白」类问题神器。固定开启(没性能影响)。
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                WebView.setWebContentsDebuggingEnabled(true)
+            }
         }
 
         runCatching { applyUa(webView) }

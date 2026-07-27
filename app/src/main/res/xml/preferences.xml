@@ -17,7 +17,7 @@
             android:title="@string/settings_ua_mode"
             android:entries="@array/ua_mode_names"
             android:entryValues="@array/ua_mode_ids"
-            android:defaultValue="tv" />
+            android:defaultValue="desktop" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_title" app:iconSpaceReserved="false">

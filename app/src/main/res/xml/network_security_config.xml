@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置:
+  1. 明文 HTTP 全局允许(targetSdk 34 默认禁,导致 B 站图片 CDN/统计代码等 http 资源加载失败)
+  2. 明文流量白名单常用域名(包括 localhost/局域网 IP 用于本地开发)
+
+  B 站黑白页面 + 元素错位的根因之一就是 https 页面里的 http CSS/JS 子资源
+  被默认配置拒绝加载,加上 usesCleartextTraffic=true + MIXED_CONTENT_ALWAYS_ALLOW
+  才能完整加载页面样式。
+-->
+<network-security-config>
+    <!-- 全局允许明文 HTTP -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- 域名白名单(显式列出常用站点,部分国产 ROM 在 base-config 之外还需要 domain-config 才生效) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.0.0/8</domain>
+        <domain includeSubdomains="true">192.168.0.0/16</domain>
+        <domain includeSubdomains="true">172.16.0.0/12</domain>
+        <domain includeSubdomains="true">bilibili.com</domain>
+        <domain includeSubdomains="true">bilivideo.com</domain>
+        <domain includeSubdomains="true">bilivideo.cn</domain>
+        <domain includeSubdomains="true">biliapi.net</domain>
+        <domain includeSubdomains="true">hdslb.com</domain>
+        <domain includeSubdomains="true">akamaized.net</domain>
+        <domain includeSubdomains="true">bdimg.com</domain>
+        <domain includeSubdomains="true">bdstatic.com</domain>
+        <domain includeSubdomains="true">youku.com</domain>
+        <domain includeSubdomains="true">iqiyi.com</domain>
+        <domain includeSubdomains="true">qq.com</domain>
+        <domain includeSubdomains="true">v.qq.com</domain>
+        <domain includeSubdomains="true">mgtv.com</domain>
+        <domain includeSubdomains="true">sohu.com</domain>
+        <domain includeSubdomains="true">youtube.com</domain>
+        <domain includeSubdomains="true">googlevideo.com</domain>
+        <domain includeSubdomains="true">ytimg.com</domain>
+    </domain-config>
+</network-security-config>

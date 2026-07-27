@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chrome 桌面版风格顶栏:
+  [后退][前进][刷新][主页]  [   地址栏(全宽)   ]  [书签][历史][标签页][设置]
+
+  - 56dp 高度,跟桌面 Chrome 一致
+  - 地址栏占主要宽度,圆角胶囊形
+  - 按钮间距 4dp,图标 22dp
+  - 焦点态用浅色背景圆角,鼠标可点的桌面感
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="@dimen/top_bar_height"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="@dimen/tv_safe_margin_h"
-    android:paddingEnd="@dimen/tv_safe_margin_h"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
     android:background="@color/surface">
 
     <!-- 后退 -->
@@ -29,18 +38,25 @@
         android:src="@drawable/ic_reload"
         android:contentDescription="@string/action_reload" />
 
-    <!-- 地址栏 -->
+    <!-- 主页 -->
+    <ImageButton
+        android:id="@+id/btn_home"
+        style="@style/WidgetTvFoxIconButton"
+        android:src="@drawable/ic_home"
+        android:contentDescription="@string/action_home" />
+
+    <!-- 地址栏(Chrome 风格胶囊形,占主要宽度) -->
     <FrameLayout
         android:layout_width="0dp"
-        android:layout_height="40dp"
+        android:layout_height="36dp"
         android:layout_weight="1"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
         android:background="@drawable/bg_search_box">
 
         <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
             android:layout_gravity="center_vertical|start"
             android:layout_marginStart="14dp"
             android:src="@drawable/ic_search"
@@ -54,23 +70,16 @@
             android:hint="@string/home_search_hint"
             android:textColorHint="@color/text_hint"
             android:textColor="@color/text_primary"
-            android:textSize="15sp"
+            android:textSize="14sp"
             android:inputType="textUri|textNoSuggestions"
             android:imeOptions="actionGo"
             android:singleLine="true"
-            android:paddingStart="42dp"
+            android:paddingStart="40dp"
             android:paddingEnd="14dp"
             android:focusable="true"
             android:focusableInTouchMode="true"
             android:cursorVisible="true" />
     </FrameLayout>
-
-    <!-- 主页 -->
-    <ImageButton
-        android:id="@+id/btn_home"
-        style="@style/WidgetTvFoxIconButton"
-        android:src="@drawable/ic_home"
-        android:contentDescription="@string/action_home" />
 
     <!-- 书签 -->
     <ImageButton

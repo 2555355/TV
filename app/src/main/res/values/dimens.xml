@@ -3,7 +3,8 @@
     <!-- 16:9 TV 适配关键尺寸 -->
     <dimen name="tv_safe_margin_h">48dp</dimen>
     <dimen name="tv_safe_margin_v">27dp</dimen>
-    <dimen name="top_bar_height">64dp</dimen>
+    <!-- 桌面浏览器风格:更紧凑的顶栏,Chrome 桌面版约 56dp -->
+    <dimen name="top_bar_height">56dp</dimen>
     <dimen name="card_width">220dp</dimen>
     <dimen name="card_height">124dp</dimen>  <!-- 16:9 -->
     <dimen name="card_corner">8dp</dimen>
