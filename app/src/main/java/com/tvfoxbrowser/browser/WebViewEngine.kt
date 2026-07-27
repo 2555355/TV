@@ -1,18 +1,25 @@
 package com.tvfoxbrowser.browser
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.http.SslError
 import android.os.Build
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import com.tvfoxbrowser.SettingsManager
 
 /**
@@ -31,6 +38,12 @@ import com.tvfoxbrowser.SettingsManager
  * - 所有 WebSettings 调用都用 try-catch 包裹,ROM 阉割/老内核缺少某些 API 时
  *   不要让进程崩溃,只是该特性不可用。
  * - createWebView 整体失败时返回 null,由 TabManager 决定如何降级。
+ *
+ * B站/视频站适配:
+ * - onShowCustomView/onHideCustomView:支持 H5 全屏视频(否则点全屏无反应)
+ * - onJsAlert/onJsConfirm/onJsPrompt:支持 JS 交互(否则某些站点卡死)
+ * - onReceivedSslError:SSL 证书错误时弹框让用户决定,而非静默失败
+ * - onReceivedError/onReceivedHttpError:把错误信息打到 logcat,便于排查
  */
 object WebViewEngine {
 
@@ -42,6 +55,14 @@ object WebViewEngine {
 
     private const val DESKTOP_UA =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    /** 当前全屏视频宿主容器(由 BrowserFragment 设置,用于 WebChromeClient.onShowCustomView) */
+    @Volatile
+    var fullscreenContainer: FrameLayout? = null
+
+    /** 当前正在全屏显示的 View(退出全屏时需要从容器移除) */
+    private var currentCustomView: View? = null
+    private var currentCustomViewCallback: WebChromeClient.CustomViewCallback? = null
 
     /**
      * 检测系统 WebView 是否可用。
@@ -87,6 +108,8 @@ object WebViewEngine {
             )
             webView.isFocusable = false
             webView.isFocusableInTouchMode = false
+            // 启用硬件加速层(视频/动画必须),API 14+ 默认硬件,显式设置保险
+            runCatching { webView.setLayerType(View.LAYER_TYPE_HARDWARE, null) }
         } catch (t: Throwable) {
             Log.w(TAG, "WebView base setup failed", t)
         }
@@ -96,18 +119,30 @@ object WebViewEngine {
         try {
             with(webView.settings) {
                 runCatching { javaScriptEnabled = SettingsManager.get().jsEnabled }
-                runCatching { domStorageEnabled = true }
-                runCatching { databaseEnabled = true }
+                runCatching { domStorageEnabled = true }       // localStorage/sessionStorage,B站必须
+                runCatching { databaseEnabled = true }         // WebSQL/IndexedDB 老接口
                 runCatching { useWideViewPort = true }
                 runCatching { loadWithOverviewMode = true }
                 runCatching { cacheMode = WebSettings.LOAD_DEFAULT }
                 runCatching { builtInZoomControls = false }
                 runCatching { displayZoomControls = false }
                 runCatching { setSupportZoom(false) }
-                runCatching { mediaPlaybackRequiresUserGesture = false }
+                runCatching { mediaPlaybackRequiresUserGesture = false } // 自动播放,视频站必需
+                // 老站点文件/内容访问
+                runCatching { allowFileAccess = true }
+                runCatching { allowContentAccess = true }
+                // AppCache:Android 5.1 老 WebView 必须显式开,否则部分站点资源加载失败
+                runCatching {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                        setAppCacheEnabled(true)
+                        setAppCachePath(context.cacheDir.absolutePath)
+                    }
+                }
                 // 允许混合内容(部分老站点 http 资源),API 21+
+                // 注意:MIXED_CONTENT_ALWAYS_ALLOW 比 COMPATIBILITY_MODE 更宽松,
+                // 国产 ROM 老 WebView 上后者偶尔仍会拒绝 http 子资源,改用 ALLOW 确保 B 站图片 CDN 能出
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    runCatching { mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE }
+                    runCatching { mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW }
                 }
             }
         } catch (t: Throwable) {
@@ -135,17 +170,63 @@ object WebViewEngine {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     callbacks.onProgressChanged(100, isLoading = false)
                     view?.title?.let { callbacks.onTitleChanged(it) }
-                    // 加载完成时刷新导航按钮状态
                     view?.let {
                         callbacks.onCanBackChanged(it.canGoBack())
                         callbacks.onCanForwardChanged(it.canGoForward())
                     }
+                    // 同步 Cookie 到持久化(B 站登录态依赖)
+                    runCatching { CookieManager.getInstance().flush() }
                 }
 
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
                 ): Boolean = false
+
+                /** SSL 证书错误:默认 WebView 会取消加载,导致 https 站点完全打不开。
+                 *  这里弹框让用户决定是否继续(国产 ROM 老 WebView 证书链校验常误报)。
+                 *  用户选「继续」才 proceed,安全风险可控。 */
+                override fun onReceivedSslError(
+                    view: WebView?,
+                    handler: SslErrorHandler?,
+                    error: SslError?
+                ) {
+                    Log.w(TAG, "SSL error: ${error?.primaryError} url=${error?.url}")
+                    try {
+                        val ctx = view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp()
+                        AlertDialog.Builder(ctx)
+                            .setTitle("SSL 证书错误")
+                            .setMessage("该站点的 SSL 证书有问题(${error?.primaryError}),是否仍要继续访问?\n\nURL: ${error?.url}")
+                            .setPositiveButton("继续") { _, _ -> handler?.proceed() }
+                            .setNegativeButton("取消") { _, _ -> handler?.cancel() }
+                            .setOnCancelListener { handler?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        // UI 上下文拿不到时,默认 proceed 避免站点完全打不开
+                        Log.w(TAG, "Cannot show SSL dialog, proceed anyway", t)
+                        handler?.proceed()
+                    }
+                }
+
+                /** 网络层错误(DNS/连接失败等),打到 logcat 便于排查「连不上网」问题 */
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    Log.w(TAG, "Resource error: ${error?.description} url=${request?.url}")
+                    super.onReceivedError(view, request, error)
+                }
+
+                /** HTTP 错误(404/500 等) */
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?
+                ) {
+                    Log.w(TAG, "HTTP ${errorResponse?.statusCode} url=${request?.url}")
+                    super.onReceivedHttpError(view, request, errorResponse)
+                }
             }
         } catch (t: Throwable) {
             Log.w(TAG, "setWebViewClient failed", t)
@@ -159,6 +240,107 @@ object WebViewEngine {
 
                 override fun onReceivedTitle(view: WebView?, title: String?) {
                     callbacks.onTitleChanged(title.orEmpty())
+                }
+
+                // ===== H5 视频全屏(B 站/YouTube 点全屏必需)=====
+                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                    Log.d(TAG, "onShowCustomView: entering fullscreen")
+                    // 先退出已有全屏
+                    onHideCustomView()
+                    currentCustomView = view
+                    currentCustomViewCallback = callback
+                    val container = fullscreenContainer
+                    if (view != null && container != null) {
+                        runCatching {
+                            container.removeAllViews()
+                            container.addView(
+                                view,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
+                                )
+                            )
+                            container.visibility = View.VISIBLE
+                        }
+                    } else {
+                        Log.w(TAG, "onShowCustomView: container or view is null, cannot display")
+                    }
+                }
+
+                override fun onHideCustomView() {
+                    Log.d(TAG, "onHideCustomView: leaving fullscreen")
+                    val container = fullscreenContainer
+                    currentCustomView?.let { cv ->
+                        runCatching {
+                            (cv.parent as? ViewGroup)?.removeView(cv)
+                        }
+                    }
+                    container?.let { it.visibility = View.GONE; it.removeAllViews() }
+                    currentCustomViewCallback?.let {
+                        runCatching { it.onCustomViewHidden() }
+                    }
+                    currentCustomView = null
+                    currentCustomViewCallback = null
+                }
+
+                // ===== JS 弹框(缺这些会让某些站点卡死)=====
+                override fun onJsAlert(
+                    view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?
+                ): Boolean {
+                    try {
+                        AlertDialog.Builder(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                            .setTitle("提示")
+                            .setMessage(message ?: "")
+                            .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                            .setOnCancelListener { result?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        result?.confirm()
+                    }
+                    return true
+                }
+
+                override fun onJsConfirm(
+                    view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?
+                ): Boolean {
+                    try {
+                        AlertDialog.Builder(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                            .setTitle("确认")
+                            .setMessage(message ?: "")
+                            .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                            .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                            .setOnCancelListener { result?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        result?.cancel()
+                    }
+                    return true
+                }
+
+                override fun onJsPrompt(
+                    view: WebView?, url: String?, message: String?, defaultValue: String?,
+                    result: android.webkit.JsPromptResult?
+                ): Boolean {
+                    try {
+                        val edit = android.widget.EditText(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                        edit.setText(defaultValue ?: "")
+                        AlertDialog.Builder(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                            .setTitle(message ?: "输入")
+                            .setView(edit)
+                            .setPositiveButton("确定") { _, _ -> result?.confirm(edit.text.toString()) }
+                            .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                            .setOnCancelListener { result?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        result?.cancel()
+                    }
+                    return true
+                }
+
+                /** 控制台日志转发到 logcat,方便排查页面 JS 报错 */
+                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                    Log.d("WebViewConsole", "[${consoleMessage?.messageLevel()}] ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}")
+                    return true
                 }
             }
         } catch (t: Throwable) {
@@ -183,6 +365,15 @@ object WebViewEngine {
     /** UA 模式切换后,对所有现存 WebView 重新应用 */
     fun reapplyUaForAll(webViews: List<WebView>) {
         webViews.forEach { runCatching { applyUa(it) } }
+    }
+
+    /** 退出当前全屏(供 BrowserFragment 在 BACK 键时调用) */
+    fun exitFullscreenIfAny(): Boolean {
+        if (currentCustomView != null) {
+            onHideCustomView()
+            return true
+        }
+        return false
     }
 
     // -------- 清理操作(供 SettingsFragment 调用) --------

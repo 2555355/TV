@@ -52,4 +52,13 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 视频/网页全屏容器:WebChromeClient.onShowCustomView 会把视频 SurfaceView 加到这里,
+         覆盖整个屏幕(包括顶栏)。B站/YouTube 等点全屏必需。 -->
+    <FrameLayout
+        android:id="@+id/fullscreen_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black"
+        android:visibility="gone" />
+
 </FrameLayout>

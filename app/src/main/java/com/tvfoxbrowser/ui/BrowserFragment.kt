@@ -13,6 +13,7 @@ import com.tvfoxbrowser.R
 import com.tvfoxbrowser.SearchEngine
 import com.tvfoxbrowser.browser.Tab
 import com.tvfoxbrowser.browser.TabManager
+import com.tvfoxbrowser.browser.WebViewEngine
 import com.tvfoxbrowser.databinding.FragmentBrowserBinding
 import com.tvfoxbrowser.home.HomeFragment
 
@@ -49,6 +50,8 @@ class BrowserFragment :
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         tabManager = TabManager(binding.webViewContainer).also { it.listener = this }
+        // 把全屏视频容器注入 WebViewEngine,供 WebChromeClient.onShowCustomView 使用
+        WebViewEngine.fullscreenContainer = binding.fullscreenContainer
 
         setupTopBar()
         setupAddressBar()
@@ -239,17 +242,22 @@ class BrowserFragment :
     }
 
     fun onBackPressed(): Boolean {
+        // 1. 优先退出 H5 全屏视频(B 站点全屏后按返回应退出全屏而非关闭页面)
+        if (WebViewEngine.exitFullscreenIfAny()) return true
+        // 2. 关闭 Overlay(标签页/历史/书签/设置)
         val overlay = childFragmentManager.findFragmentByTag(TAG_OVERLAY)
         val settings = childFragmentManager.findFragmentByTag(TAG_SETTINGS)
         if (overlay != null || settings != null) {
             closeOverlay()
             return true
         }
+        // 3. 网页后退
         val tab = tabManager.activeTab
         if (tab != null && tab.canGoBack) {
             tabManager.goBack()
             return true
         }
+        // 4. 当前非主页,返回主页
         if (tab != null && !tab.url.startsWith("about:home")) {
             goHome()
             return true
@@ -259,6 +267,9 @@ class BrowserFragment :
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // 退出可能残留的全屏视频
+        WebViewEngine.exitFullscreenIfAny()
+        WebViewEngine.fullscreenContainer = null
         tabManager.destroy()
         _binding = null
     }

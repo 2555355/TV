@@ -24,6 +24,7 @@
         android:theme="@style/Theme.TvFoxBrowser"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
+        android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
         <activity
