@@ -75,12 +75,6 @@ class BrowserFragment :
         }
     }
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        // 解除回调,避免 Fragment 销毁后还被回调导致泄漏
-        WebViewEngine.onVideoFound = null
-    }
-
     private fun setupTopBar() {
         binding.topBar.btnBack.setOnClickListener { tabManager.goBack() }
         binding.topBar.btnForward.setOnClickListener { tabManager.goForward() }
@@ -289,6 +283,8 @@ class BrowserFragment :
         // 退出可能残留的全屏视频
         WebViewEngine.exitFullscreenIfAny()
         WebViewEngine.fullscreenContainer = null
+        // 解除视频拦截回调,避免 Fragment 销毁后还被回调导致泄漏
+        WebViewEngine.onVideoFound = null
         tabManager.destroy()
         _binding = null
     }

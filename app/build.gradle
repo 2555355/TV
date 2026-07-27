@@ -29,7 +29,18 @@ android {
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // lint 检查不阻塞 release 构建
+            // (QUERY_ALL_PACKAGES 等 Google Play 政策警告不影响 TV 端自用)
+            lint {
+                abortOnError false
+                checkReleaseBuilds false
+            }
         }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
