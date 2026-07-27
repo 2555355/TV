@@ -131,11 +131,16 @@ object WebViewEngine {
                 // 老站点文件/内容访问
                 runCatching { allowFileAccess = true }
                 runCatching { allowContentAccess = true }
-                // AppCache:Android 5.1 老 WebView 必须显式开,否则部分站点资源加载失败
-                runCatching {
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                        setAppCacheEnabled(true)
-                        setAppCachePath(context.cacheDir.absolutePath)
+                // AppCache:Android 5.1 老 WebView 必须显式开,否则部分站点资源加载失败。
+                // 但 setAppCacheEnabled/setAppCachePath 在 compileSdk 26 弃用,
+                // compileSdk 34 已被 Kotlin 编译器彻底移除,这里用反射调用。
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                    runCatching {
+                        val cls = WebSettings::class.java
+                        cls.getMethod("setAppCacheEnabled", java.lang.Boolean.TYPE)
+                            .invoke(this, true)
+                        cls.getMethod("setAppCachePath", String::class.java)
+                            .invoke(this, context.cacheDir.absolutePath)
                     }
                 }
                 // 允许混合内容(部分老站点 http 资源),API 21+
@@ -245,8 +250,9 @@ object WebViewEngine {
                 // ===== H5 视频全屏(B 站/YouTube 点全屏必需)=====
                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                     Log.d(TAG, "onShowCustomView: entering fullscreen")
-                    // 先退出已有全屏
-                    onHideCustomView()
+                    // 先退出已有全屏(直接调用本 object 的清理逻辑,
+                    // 不调用 onHideCustomView() 本身,避免 Kotlin 解析问题)
+                    performHideCustomView()
                     currentCustomView = view
                     currentCustomViewCallback = callback
                     val container = fullscreenContainer
@@ -269,18 +275,7 @@ object WebViewEngine {
 
                 override fun onHideCustomView() {
                     Log.d(TAG, "onHideCustomView: leaving fullscreen")
-                    val container = fullscreenContainer
-                    currentCustomView?.let { cv ->
-                        runCatching {
-                            (cv.parent as? ViewGroup)?.removeView(cv)
-                        }
-                    }
-                    container?.let { it.visibility = View.GONE; it.removeAllViews() }
-                    currentCustomViewCallback?.let {
-                        runCatching { it.onCustomViewHidden() }
-                    }
-                    currentCustomView = null
-                    currentCustomViewCallback = null
+                    performHideCustomView()
                 }
 
                 // ===== JS 弹框(缺这些会让某些站点卡死)=====
@@ -370,10 +365,36 @@ object WebViewEngine {
     /** 退出当前全屏(供 BrowserFragment 在 BACK 键时调用) */
     fun exitFullscreenIfAny(): Boolean {
         if (currentCustomView != null) {
-            onHideCustomView()
+            performHideCustomView()
             return true
         }
         return false
+    }
+
+    /**
+     * 实际执行退出全屏的清理逻辑。
+     * 抽成独立函数,以便 WebChromeClient.onShowCustomView 和外部 BACK 键
+     * 都能调用,而不必互相依赖 override 方法本身(Kotlin 在匿名 object 里
+     * 调用同 object 的 override 方法偶尔会 Unresolved reference)。
+     */
+    private fun performHideCustomView() {
+        val container = fullscreenContainer
+        currentCustomView?.let { cv ->
+            runCatching {
+                (cv.parent as? ViewGroup)?.removeView(cv)
+            }
+        }
+        container?.let {
+            runCatching {
+                it.visibility = View.GONE
+                it.removeAllViews()
+            }
+        }
+        currentCustomViewCallback?.let {
+            runCatching { it.onCustomViewHidden() }
+        }
+        currentCustomView = null
+        currentCustomViewCallback = null
     }
 
     // -------- 清理操作(供 SettingsFragment 调用) --------
