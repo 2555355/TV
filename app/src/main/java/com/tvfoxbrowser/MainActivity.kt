@@ -5,11 +5,10 @@ import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.commit
 import com.tvfoxbrowser.ui.BrowserFragment
-import com.tvfoxbrowser.ui.ErrorFragment
 
 /**
  * 入口 Activity。
- * - 托管 BrowserFragment 或 ErrorFragment(内核失败时)
+ * - 托管 BrowserFragment
  * - 处理遥控器 BACK / MENU / SEARCH 按键
  * - 初始化各 Manager
  *
@@ -30,45 +29,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         if (savedInstanceState == null) {
-            when {
-                !TvFoxApp.isRuntimeReady() -> {
-                    // GeckoRuntime 初始化失败 -> 显示内核错误页
-                    showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.RUNTIME_INIT))
-                }
-                StartupTracker.wasNativeCrashLastTime() -> {
-                    // 上次启动在到达 onResume 之前就崩了(Java 抓不到的 native SIGSEGV)
-                    // -> 显示 native 崩溃页(区别于普通 Java 崩溃)
-                    showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.NATIVE_CRASH))
-                }
-                CrashHandler.readLog() != null -> {
-                    // 上次 Java 崩溃过 -> 显示崩溃页一次。
-                    // ErrorFragment 显示日志后会自行清除磁盘日志,
-                    // 避免用户关闭后再打开仍卡在崩溃页(死循环)。
-                    showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.CRASH))
-                }
-                else -> {
-                    // 正常启动 -> 进入浏览器
-                    browserFragment = BrowserFragment()
-                    showFragment(browserFragment!!)
-                }
+            browserFragment = BrowserFragment()
+            supportFragmentManager.commit {
+                replace(R.id.main_container, browserFragment!!)
             }
         } else {
             browserFragment = supportFragmentManager
                 .findFragmentById(R.id.main_container) as? BrowserFragment
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // 标记 Activity 已成功显示,清除 "starting" 状态
-        // 若进程在到达这里之前被 native SIGSEGV 杀掉,下次启动
-        // StartupTracker.wasNativeCrashLastTime() 会返回 true
-        StartupTracker.markStarted()
-    }
-
-    private fun showFragment(frag: androidx.fragment.app.Fragment) {
-        supportFragmentManager.commit {
-            replace(R.id.main_container, frag)
         }
     }
 

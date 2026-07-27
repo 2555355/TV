@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.commit
 import com.tvfoxbrowser.BookmarkManager
 import com.tvfoxbrowser.HistoryManager
 import com.tvfoxbrowser.R
@@ -56,14 +55,7 @@ class BrowserFragment :
 
         // 首个标签页加载主页
         if (savedInstanceState == null) {
-            // 首个 session 创建失败(GPU/驱动异常)-> 切换到内核错误页,
-            // 避免空白界面或崩溃。
-            if (tabManager.addTab("about:home") == null) {
-                requireActivity().supportFragmentManager.commit {
-                    replace(R.id.main_container, ErrorFragment.newInstance(ErrorFragment.Mode.RUNTIME_INIT))
-                }
-                return
-            }
+            tabManager.addTab("about:home")
         }
     }
 
@@ -98,7 +90,7 @@ class BrowserFragment :
     }
 
     private fun goHome() {
-        val tab = tabManager.activeTab ?: tabManager.addTab("about:home") ?: return
+        val tab = tabManager.activeTab ?: tabManager.addTab("about:home")
         tab.url = "about:home"
         tabManager.loadUrl("about:home")
         showHome(true)
@@ -215,13 +207,7 @@ class BrowserFragment :
     }
 
     override fun onNewTab(url: String) {
-        if (tabManager.addTab(url) == null) {
-            // session 创建失败,显示错误页
-            requireActivity().supportFragmentManager.commit {
-                replace(R.id.main_container, ErrorFragment.newInstance(ErrorFragment.Mode.RUNTIME_INIT))
-            }
-            return
-        }
+        tabManager.addTab(url)
         showHome(url.startsWith("about:home"))
         closeOverlay()
     }

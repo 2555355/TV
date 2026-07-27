@@ -10,22 +10,11 @@ android {
     defaultConfig {
         applicationId "com.tvfoxbrowser"
         minSdk 21
-        // targetSdk 降到 28:GeckoView 124 的 native 库在高 targetSdk 下
-        // 容易触发系统安全策略导致安装失败或运行时崩溃。
-        // 28 已能满足浏览器功能需求(网络/存储/WebView)。
-        targetSdk 28
-        versionCode 5
+        targetSdk 34
+        versionCode 3
         versionName "1.0"
         // 只保留中英语言资源,移除 AndroidX 自带的其他语言(~2MB)
         resourceConfigurations += ['zh', 'zh-rCN', 'zh-rTW', 'en']
-    }
-
-    // 本应用通过 GitHub 直接分发 APK,不上架 Google Play。
-    // targetSdk 28 是为兼容国产 TV 系统刻意降低的,
-    // 禁用「targetSdk 过低」相关的 lint 检查,避免 release 构建被 lint 卡住。
-    lint {
-        disable 'ExpiredTargetSdkVersion'
-        abortOnError false
     }
 
     // ABI splits: 为每个 CPU 架构单独生成 APK,
@@ -55,7 +44,7 @@ android {
             // 开启 R8 代码压缩 + 资源压缩
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro
         }
     }
     compileOptions {
@@ -71,12 +60,6 @@ android {
 
     // 打包时排除多余资源
     packagingOptions {
-        // GeckoView 的 native 库需要在安装时解压到 data 目录,
-        // 部分 TV 系统(尤其国产定制 ROM)不支持不解压 native 库的安装方式,
-        // 会导致「安装失败」。useLegacyPackaging=true 强制 AGP 用传统方式打包。
-        jniLibs {
-            useLegacyPackaging = true
-        }
         resources {
             excludes += [
                 'META-INF/AL2.0',

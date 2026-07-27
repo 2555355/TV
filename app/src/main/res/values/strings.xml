@@ -67,17 +67,4 @@
     <!-- 提示 -->
     <string name="loading">加载中…</string>
     <string name="permission_request">需要权限才能继续</string>
-
-    <!-- 错误页 -->
-    <string name="error_runtime_title">浏览器内核初始化失败</string>
-    <string name="error_runtime_message">Firefox 内核 (GeckoView) 在此设备上无法启动。\n这通常由以下原因导致:\n\n• 设备缺少必要的 GPU 驱动\n• Android 系统版本过低或定制系统不兼容\n• APK 架构与设备 CPU 不匹配\n\n请尝试:\n1. 安装对应 CPU 架构的版本(arm64/armv7)\n2. 重启电视后再试\n3. 如仍失败,请反馈下方日志</string>
-    <string name="error_crash_title">应用已停止运行</string>
-    <string name="error_crash_message">TV 浏览器遇到错误退出。\n崩溃日志已保存,可点击下方查看。</string>
-    <string name="error_native_title">电视兼容性问题</string>
-    <string name="error_native_message">浏览器内核 (GeckoView) 在此电视上启动时发生 native 崩溃。\n\n这通常由以下原因导致:\n\n• 电视 GPU 驱动与 Firefox WebRender 不兼容\n• Android 系统版本过低或定制系统限制后台进程\n• APK 架构与电视 CPU 不匹配\n\n请尝试:\n1. 确认安装了正确架构版本(arm64/armv7)\n2. 卸载后重新安装,清理旧数据\n3. 在设置 - 应用中授予「自启动」权限\n4. 若仍失败,请反馈电视型号和 Android 版本</string>
-    <string name="error_view_log">查看日志</string>
-    <string name="error_restart">重启应用</string>
-    <string name="error_close">关闭</string>
-    <string name="error_log_title">崩溃日志</string>
-    <string name="error_log_empty">暂无崩溃日志</string>
 </resources>

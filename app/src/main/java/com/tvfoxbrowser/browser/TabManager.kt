@@ -33,13 +33,11 @@ class TabManager(
 
     enum class TabField { URL, TITLE, PROGRESS, LOADING, SECURITY, NAV }
 
-    /** 新建标签页并加载 URL;返回新 Tab。session 创建失败时返回 null */
-    fun addTab(url: String = "about:blank"): Tab? {
+    /** 新建标签页并加载 URL;返回新 Tab */
+    fun addTab(url: String = "about:blank"): Tab {
         val tabId = idGen.getAndIncrement()
         val callbacks = SessionCallbackAggregator(tabId, this)
-        // 用安全版本:session 创建失败(GPU/驱动异常)时返回 null,
-        // 让 UI 层显示错误页而非整个进程崩溃。
-        val session = GeckoEngine.createSessionSafely(callbacks) ?: return null
+        val session = GeckoEngine.createSession(callbacks)
         val tab = Tab(id = tabId, session = session, url = url)
         tabs.add(tab)
         setActive(tabs.size - 1)
@@ -48,7 +46,7 @@ class TabManager(
         // 若把 about:home 传给 GeckoView,会让 session 进入异常状态,
         // 后续 loadUri 真实 URL 时可能触发 native 崩溃。
         if (url != "about:blank" && !url.startsWith("about:home")) {
-            runCatching { session.loadUri(url) }
+            session.loadUri(url)
         }
         listener?.onTabListChanged()
         return tab
@@ -83,7 +81,7 @@ class TabManager(
         if (tabs.isEmpty()) {
             activeIndex = -1
             listener?.onTabListChanged()
-            addTab("about:home")?.let { listener?.onActiveTabChanged(it) }
+            listener?.onActiveTabChanged(addTab("about:home"))
             return
         }
         // 调整活动索引
@@ -120,11 +118,11 @@ class TabManager(
     }
 
     fun loadUrl(url: String) {
-        val tab = activeTab ?: addTab(url) ?: return
+        val tab = activeTab ?: addTab(url)
         tab.url = url
         // about:home 不传给 GeckoView(同 addTab 的处理)
         if (!url.startsWith("about:home")) {
-            runCatching { tab.session.loadUri(url) }
+            tab.session.loadUri(url)
         }
         listener?.onActiveTabUpdated(tab, TabField.URL)
     }

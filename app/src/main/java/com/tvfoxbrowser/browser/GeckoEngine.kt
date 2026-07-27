@@ -56,19 +56,9 @@ object GeckoEngine {
         val session = GeckoSession(buildSettings())
         applyUaOverride(session)
         session.attachHelper(callbacks)
-        // session.open 可能在 GPU 驱动异常时抛 Java 异常(如 IllegalStateException),
-        // 用 try-catch 包裹,让上层有机会显示错误页而非直接 crash。
-        // 注意:native SIGSEGV 仍抓不到,但 Java 异常可以。
         session.open(TvFoxApp.getRuntime())
         return session
     }
-
-    /** 安全创建 session,失败返回 null 并记录错误 */
-    fun createSessionSafely(callbacks: SessionCallbacks): GeckoSession? = runCatching {
-        createSession(callbacks)
-    }.onFailure { e ->
-        android.util.Log.e("GeckoEngine", "createSession failed", e)
-    }.getOrNull()
 
     /** UA 模式切换后,对所有现存 session 重新应用 */
     fun reapplyUaForAll(sessions: List<GeckoSession>) {
