@@ -10,9 +10,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url "https://maven.mozilla.org/maven2/"
-        }
+        // Crosswalk 嵌入式内核(官方源已下线,用 louisgeek 镜像)
+        // louisgeek 修改版:修复无 SSL 证书 https 站点的 ERR_SECURITY_RESPONSE 异常
+        maven { url "https://code.aliyun.com/louisgeek/maven/raw/master" }
+        maven { url "https://raw.githubusercontent.com/louisgeek/maven/master" }
     }
 }
 rootProject.name = "TvFoxBrowser"
