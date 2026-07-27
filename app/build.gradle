@@ -41,9 +41,13 @@ android {
 
     buildTypes {
         release {
-            // 开启 R8 代码压缩 + 资源压缩
-            minifyEnabled true
-            shrinkResources true
+            // 关闭 R8 代码压缩 + 资源压缩。
+            // 之前开启 minifyEnabled=true 导致手机启动不了:
+            // R8 可能把 GeckoView JNI 反射需要的类给移除/混淆了,
+            // 即使有 -keep 规则也难以覆盖 GeckoView 内部所有的反射路径。
+            // 体积优先级低于可用性,先确保能启动。
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
