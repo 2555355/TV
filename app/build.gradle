@@ -10,8 +10,11 @@ android {
     defaultConfig {
         applicationId "com.tvfoxbrowser"
         minSdk 21
-        targetSdk 34
-        versionCode 3
+        // targetSdk 降到 28:GeckoView 124 的 native 库在高 targetSdk 下
+        // 容易触发系统安全策略导致安装失败或运行时崩溃。
+        // 28 已能满足浏览器功能需求(网络/存储/WebView)。
+        targetSdk 28
+        versionCode 4
         versionName "1.0"
         // 只保留中英语言资源,移除 AndroidX 自带的其他语言(~2MB)
         resourceConfigurations += ['zh', 'zh-rCN', 'zh-rTW', 'en']
@@ -60,6 +63,12 @@ android {
 
     // 打包时排除多余资源
     packagingOptions {
+        // GeckoView 的 native 库需要在安装时解压到 data 目录,
+        // 部分 TV 系统(尤其国产定制 ROM)不支持不解压 native 库的安装方式,
+        // 会导致「安装失败」。useLegacyPackaging=true 强制 AGP 用传统方式打包。
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += [
                 'META-INF/AL2.0',
