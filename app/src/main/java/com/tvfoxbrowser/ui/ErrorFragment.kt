@@ -25,8 +25,8 @@ class ErrorFragment : Fragment() {
     private var _binding: FragmentErrorBinding? = null
     private val binding get() = _binding!!
 
-    /** 错误模式:内核初始化失败 / 上次崩溃 */
-    enum class Mode { RUNTIME_INIT, CRASH }
+    /** 错误模式:内核初始化失败 / Java 崩溃 / native SIGSEGV 崩溃 */
+    enum class Mode { RUNTIME_INIT, CRASH, NATIVE_CRASH }
     private var mode: Mode = Mode.RUNTIME_INIT
     // 缓存崩溃日志,清除磁盘后仍可在弹窗中查看
     private var cachedCrashLog: String? = null
@@ -64,12 +64,20 @@ class ErrorFragment : Fragment() {
                 binding.errorMessage.setText(R.string.error_crash_message)
                 // 先缓存完整日志(供弹窗查看),再清除磁盘日志,
                 // 避免用户关闭后再打开仍卡在崩溃页(死循环)。
-                // 若浏览器再次崩溃,会重新写入日志,下次启动再次显示。
                 cachedCrashLog = CrashHandler.readLog()
                 CrashHandler.clearLog()
                 binding.errorDetail.text = cachedCrashLog
                     ?.lines()?.takeLast(20)?.joinToString("\n")
                     ?: getString(R.string.error_log_empty)
+            }
+            Mode.NATIVE_CRASH -> {
+                // native SIGSEGV 在 Java 层抓不到,crash.log 通常是空的。
+                // 这种崩溃最常见的原因是 GPU/WebRender 在国产 TV 驱动上崩。
+                binding.errorTitle.setText(R.string.error_native_title)
+                binding.errorMessage.setText(R.string.error_native_message)
+                binding.errorDetail.text = "无 Java 堆栈(native SIGSEGV)"
+                // 重置启动追踪状态,让用户重启后能再次尝试
+                com.tvfoxbrowser.StartupTracker.reset()
             }
         }
 

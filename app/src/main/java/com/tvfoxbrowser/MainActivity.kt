@@ -35,11 +35,15 @@ class MainActivity : AppCompatActivity() {
                     // GeckoRuntime 初始化失败 -> 显示内核错误页
                     showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.RUNTIME_INIT))
                 }
+                StartupTracker.wasNativeCrashLastTime() -> {
+                    // 上次启动在到达 onResume 之前就崩了(Java 抓不到的 native SIGSEGV)
+                    // -> 显示 native 崩溃页(区别于普通 Java 崩溃)
+                    showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.NATIVE_CRASH))
+                }
                 CrashHandler.readLog() != null -> {
-                    // 上次崩溃过 -> 显示崩溃页一次。
+                    // 上次 Java 崩溃过 -> 显示崩溃页一次。
                     // ErrorFragment 显示日志后会自行清除磁盘日志,
                     // 避免用户关闭后再打开仍卡在崩溃页(死循环)。
-                    // 若浏览器再次崩溃,会重新写入日志,下次启动再次显示。
                     showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.CRASH))
                 }
                 else -> {
@@ -52,6 +56,14 @@ class MainActivity : AppCompatActivity() {
             browserFragment = supportFragmentManager
                 .findFragmentById(R.id.main_container) as? BrowserFragment
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 标记 Activity 已成功显示,清除 "starting" 状态
+        // 若进程在到达这里之前被 native SIGSEGV 杀掉,下次启动
+        // StartupTracker.wasNativeCrashLastTime() 会返回 true
+        StartupTracker.markStarted()
     }
 
     private fun showFragment(frag: androidx.fragment.app.Fragment) {
