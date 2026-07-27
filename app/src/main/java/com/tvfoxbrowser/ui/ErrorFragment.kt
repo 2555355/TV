@@ -28,6 +28,8 @@ class ErrorFragment : Fragment() {
     /** 错误模式:内核初始化失败 / 上次崩溃 */
     enum class Mode { RUNTIME_INIT, CRASH }
     private var mode: Mode = Mode.RUNTIME_INIT
+    // 缓存崩溃日志,清除磁盘后仍可在弹窗中查看
+    private var cachedCrashLog: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,7 +62,12 @@ class ErrorFragment : Fragment() {
             Mode.CRASH -> {
                 binding.errorTitle.setText(R.string.error_crash_title)
                 binding.errorMessage.setText(R.string.error_crash_message)
-                binding.errorDetail.text = CrashHandler.readLog()
+                // 先缓存完整日志(供弹窗查看),再清除磁盘日志,
+                // 避免用户关闭后再打开仍卡在崩溃页(死循环)。
+                // 若浏览器再次崩溃,会重新写入日志,下次启动再次显示。
+                cachedCrashLog = CrashHandler.readLog()
+                CrashHandler.clearLog()
+                binding.errorDetail.text = cachedCrashLog
                     ?.lines()?.takeLast(20)?.joinToString("\n")
                     ?: getString(R.string.error_log_empty)
             }
@@ -76,7 +83,9 @@ class ErrorFragment : Fragment() {
     }
 
     private fun showLogDialog() {
-        val log = CrashHandler.readLog() ?: getString(R.string.error_log_empty)
+        val log = cachedCrashLog
+            ?: CrashHandler.readLog()
+            ?: getString(R.string.error_log_empty)
         AlertDialog.Builder(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(R.string.error_log_title)
             .setMessage(log)

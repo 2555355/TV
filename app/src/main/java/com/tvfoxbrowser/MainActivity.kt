@@ -30,15 +30,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         if (savedInstanceState == null) {
-            // 检查上次是否有崩溃记录(若有,显示崩溃页而非直接进浏览器)
-            val lastCrash = CrashHandler.readLog()
             when {
                 !TvFoxApp.isRuntimeReady() -> {
                     // GeckoRuntime 初始化失败 -> 显示内核错误页
                     showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.RUNTIME_INIT))
                 }
-                lastCrash != null -> {
-                    // 上次崩溃过 -> 显示崩溃页(用户可查看日志或重启)
+                CrashHandler.readLog() != null -> {
+                    // 上次崩溃过 -> 显示崩溃页一次。
+                    // ErrorFragment 显示日志后会自行清除磁盘日志,
+                    // 避免用户关闭后再打开仍卡在崩溃页(死循环)。
+                    // 若浏览器再次崩溃,会重新写入日志,下次启动再次显示。
                     showFragment(ErrorFragment.newInstance(ErrorFragment.Mode.CRASH))
                 }
                 else -> {

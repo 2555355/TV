@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
+import java.io.File
 
 /**
  * Application 入口,负责初始化 GeckoRuntime (Firefox 内核运行时)。
@@ -24,6 +25,33 @@ class TvFoxApp : Application() {
 
     private fun initGeckoRuntime() {
         runCatching {
+            // GeckoView 124 默认启用 WebRender + GPU compositor。
+            // 国产 TV 的 GPU 驱动经常有 bug,compositor 启动时会触发 native SIGSEGV,
+            // Java 层 UncaughtExceptionHandler 抓不到,表现为「打开就闪退」且无崩溃日志。
+            //
+            // 通过 configFilePath 注入 prefs,强制软件渲染,代价是滚动流畅度下降,
+            // 但稳定性优先于性能。
+            val geckoDir = getDir("gecko", 0).apply { if (!exists()) mkdirs() }
+            val prefsFile = File(geckoDir, "tv-fox-prefs.json")
+            if (!prefsFile.exists()) {
+                prefsFile.writeText(
+                    """
+                    {
+                      "gfx.webrender.all": false,
+                      "gfx.webrender.enabled": false,
+                      "gfx.webrender.compositor": false,
+                      "layers.acceleration.disabled": true,
+                      "layers.gpu-process.enabled": false,
+                      "media.hardware-video-decoding.enabled": false,
+                      "media.ffmpeg.vaapi.enabled": false,
+                      "dom.ipc.processCount": 1,
+                      "browser.tabs.remote.autostart": false
+                    }
+                    """.trimIndent()
+                )
+                Log.i(TAG, "Wrote software-rendering prefs to ${prefsFile.absolutePath}")
+            }
+
             // GeckoView 124 的 ContentBlocking.Settings.Builder 通过 categories(int)
             // 控制 ETP,没有 setEnhancedTrackingProtection 方法。
             // DNT/ETP 级别在 session 层用 useTrackingProtection 控制(见 GeckoEngine)。
@@ -35,11 +63,11 @@ class TvFoxApp : Application() {
                 .aboutConfigEnabled(false)
                 .consoleOutput(false)
                 .contentBlocking(cbSettings)
-                .configFilePath(getDir("gecko", 0).path)
+                .configFilePath(prefsFile.absolutePath)
                 .build()
 
             geckoRuntime = GeckoRuntime.create(this, settings)
-            Log.i(TAG, "GeckoRuntime initialized successfully")
+            Log.i(TAG, "GeckoRuntime initialized successfully (software rendering)")
         }.onFailure { e ->
             Log.e(TAG, "GeckoRuntime init FAILED", e)
             runtimeInitError = e
