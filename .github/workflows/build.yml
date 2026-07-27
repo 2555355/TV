@@ -53,34 +53,52 @@ jobs:
       - name: Sign Release APK
         run: |
           BUILD_DIR="app/build/outputs/apk/release"
-          UNSIGNED="$BUILD_DIR/app-release-unsigned.apk"
-          SIGNED="$BUILD_DIR/tv-fox-release.apk"
-
-          if [ -f "$UNSIGNED" ]; then
-            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-              --ks app/release.keystore \
-              --ks-key-alias tv-fox \
-              --ks-pass pass:tvfox123 \
-              --key-pass pass:tvfox123 \
-              --out "$SIGNED" \
-              "$UNSIGNED"
-            echo "Release APK signed: $SIGNED"
-          else
-            echo "Warning: app-release-unsigned.apk not found, skipping signing"
-          fi
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks app/release.keystore \
+            --ks-key-alias tv-fox \
+            --ks-pass pass:tvfox123 \
+            --key-pass pass:tvfox123 \
+            --in "$BUILD_DIR/app-arm64-v8a-release-unsigned.apk" \
+            --out "$BUILD_DIR/tv-fox-arm64-release.apk" || true
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks app/release.keystore \
+            --ks-key-alias tv-fox \
+            --ks-pass pass:tvfox123 \
+            --key-pass pass:tvfox123 \
+            --in "$BUILD_DIR/app-armeabi-v7a-release-unsigned.apk" \
+            --out "$BUILD_DIR/tv-fox-armv7-release.apk" || true
+          echo "Signed APKs:"
+          ls -la "$BUILD_DIR"/*.apk || true
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: tv-fox-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: tv-fox-debug-arm64
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           retention-days: 30
+          if-no-files-found: warn
 
-      - name: Upload Release APK
+      - name: Upload Debug APK (armv7)
         uses: actions/upload-artifact@v4
         with:
-          name: tv-fox-release
-          path: app/build/outputs/apk/release/tv-fox-release.apk
+          name: tv-fox-debug-armv7
+          path: app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload Release APK (arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-fox-release-arm64
+          path: app/build/outputs/apk/release/tv-fox-arm64-release.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Release APK (armv7)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-fox-release-armv7
+          path: app/build/outputs/apk/release/tv-fox-armv7-release.apk
           if-no-files-found: warn
           retention-days: 30
 
@@ -110,8 +128,8 @@ jobs:
             - **返回键**：网页后退 / 关闭 Overlay / 退出
             - **菜单键**：打开设置
           files: |
-            app/build/outputs/apk/release/tv-fox-release.apk
-            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/tv-fox-arm64-release.apk
+            app/build/outputs/apk/release/tv-fox-armv7-release.apk
           draft: false
           prerelease: false
         env:
