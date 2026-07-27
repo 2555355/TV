@@ -39,3 +39,14 @@
 # ============== 通用 ==============
 -dontwarn org.mozilla.**
 -dontwarn javax.annotation.**
+
+# ============== R8 缺失类处理 ==============
+# GeckoView 依赖 snakeyaml,它引用了 java.beans.*(Java SE 类,Android 上不存在)。
+# 这些类在运行时不会被实际调用,只是 R8 静态分析时发现缺失就报错。
+# 用 -dontwarn 抑制,R8 会跳过这些引用。
+-dontwarn java.beans.**
+-dontwarn org.yaml.snakeyaml.**
+-dontwarn org.yaml.**
+
+# R8 missing_rules.txt 自动生成的兜底规则
+-keep,allowobfuscation class org.yaml.snakeyaml.** { *; }
