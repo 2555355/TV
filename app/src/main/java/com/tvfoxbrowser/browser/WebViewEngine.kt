@@ -12,6 +12,7 @@ import android.widget.FrameLayout
 import com.tvfoxbrowser.SettingsManager
 import com.tvfoxbrowser.TvFoxApp
 import com.tvfoxbrowser.video.VideoUrlInterceptor
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
@@ -91,6 +92,13 @@ object WebViewEngine {
         try {
             runtime = GeckoRuntime.create(context)
             runtimeReady = runtime != null
+            // GeckoRuntimeSettings:setJavaScriptEnabled / setConsoleOutputEnabled
+            // 返回 GeckoRuntimeSettings(fluent builder,非 void),Kotlin 不能用属性赋值,
+            // 必须显式调用 setter。JS 开关走 runtime 级别(session 级只有 allowJavascript)。
+            runtime?.settings?.let { rs ->
+                runCatching { rs.setJavaScriptEnabled(SettingsManager.get().jsEnabled) }
+                runCatching { rs.setConsoleOutputEnabled(true) }
+            }
             Log.i(TAG, "GeckoRuntime created: $runtimeReady")
         } catch (t: Throwable) {
             Log.e(TAG, "GeckoRuntime.create failed", t)
@@ -151,15 +159,15 @@ object WebViewEngine {
         }
 
         // 配置 session settings
+        // GeckoView 69 GeckoSessionSettings 仅有:allowJavascript / useTrackingProtection /
+        // suspendMediaWhenInactive / userAgentMode / displayMode / viewportMode / userAgentOverride。
+        // 注意:setUsePrivateMode / setUseMultiprocess 是 private,无法外部赋值(默认 false)。
+        // domStorageEnabled / allowFileAccess / allowContentAccess / mediaPlaybackRequiresUserGesture
+        // 在 GeckoView 69 不存在(Gecko 内核 DOM 存储始终开启;文件访问通过 loadUri("file://") 处理;
+        // 媒体手势由 GeckoRuntimeSettings 控制,非 session 级)。
         try {
             val s = session.settings
-            runCatching { s.javaScriptEnabled = SettingsManager.get().jsEnabled }
-            runCatching { s.domStorageEnabled = true }
-            runCatching { s.allowFileAccess = true }
-            runCatching { s.allowContentAccess = true }
-            runCatching { s.mediaPlaybackRequiresUserGesture = false }
-            runCatching { s.usePrivateMode = false }
-            // GeckoView 69: setViewportMode / setMultiprocess 等按需
+            runCatching { s.allowJavascript = SettingsManager.get().jsEnabled }
         } catch (t: Throwable) {
             Log.w(TAG, "GeckoSession settings failed", t)
         }
@@ -207,16 +215,16 @@ object WebViewEngine {
                  */
                 override fun onLoadRequest(
                     session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest
-                ): GeckoResult<GeckoSession.NavigationDelegate.AllowOrDeny>? {
+                ): GeckoResult<AllowOrDeny>? {
                     val original = request.uri.orEmpty()
                     val rewritten = rewriteToMobile(original)
                     return if (rewritten != null && rewritten != original) {
                         Log.d(TAG, "URL rewrite: $original -> $rewritten")
                         // 异步加载新 URL,并拒绝原请求
                         mainHandler.post { runCatching { session.loadUri(rewritten) } }
-                        GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
+                        GeckoResult.fromValue(AllowOrDeny.DENY)
                     } else {
-                        GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.ALLOW)
+                        GeckoResult.fromValue(AllowOrDeny.ALLOW)
                     }
                 }
 
@@ -247,9 +255,10 @@ object WebViewEngine {
 
                 override fun onPageStop(session: GeckoSession, success: Boolean) {
                     callbacks.onProgressChanged(100, isLoading = false)
-                    // 注入视频拦截 JS + 兼容 CSS(Gecko 69 已支持现代 CSS,但兜底)
-                    synchronized(interceptors) { interceptors[geckoView] }?.injectJs(geckoView)
-                    injectCompatCss(geckoView)
+                    // GeckoView 69 没有 session.evaluateJS() API(该 API 在 GeckoView 81+ 才引入),
+                    // 因此无法像系统 WebView 那样注入视频拦截 JS / 兼容 CSS。
+                    // 但 Gecko 69 内核已原生支持现代 CSS Grid / flex-gap / MSE / H.264 / HLS,
+                    // B站等视频站点可直接在网页内播放,无需 JS 兜底。
                 }
 
                 override fun onSecurityChange(
@@ -352,22 +361,10 @@ object WebViewEngine {
     }
 
     /**
-     * 注入兼容性 CSS(兜底,Gecko 69 已支持现代 CSS,通常不需要)。
-     * 保留给个别极端页面用。 */
+     * 注入兼容性 CSS —— GeckoView 69 无 evaluateJS API,此处为空实现。
+     * Gecko 69 内核已原生支持现代 CSS,无需兜底注入。 */
     private fun injectCompatCss(geckoView: GeckoView) {
-        runCatching {
-            val css = """
-                (function(){
-                    if (window.__tvfoxCompatCss) return;
-                    window.__tvfoxCompatCss = true;
-                    var s = document.createElement('style');
-                    s.id = 'tvfox-compat';
-                    s.textContent = '@media screen and (max-width:980px){body{min-width:100%!important}}';
-                    (document.head || document.documentElement).appendChild(s);
-                })();
-            """.trimIndent()
-            geckoView.session?.evaluateJS(css)
-        }
+        // no-op:GeckoView 69 的 GeckoSession 没有 evaluate/evaluateJS 方法
     }
 
     /** 退出全屏:把 GeckoView 从 fullscreenContainer 移回原容器 */

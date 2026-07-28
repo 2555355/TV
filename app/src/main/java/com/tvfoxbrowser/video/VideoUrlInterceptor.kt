@@ -44,18 +44,12 @@ class VideoUrlInterceptor(
         }
     }
 
-    /** 给 GeckoView 用的注入方法 */
+    /** 给 GeckoView 用的注入方法 —— GeckoView 69 无 evaluateJS API,此处为空实现。
+     *  Gecko 69 内核原生支持 MSE/H.264/HLS,B站等视频可直接在网页内播放,
+     *  无需 JS 拦截兜底。视频 URL 仍可通过 reportVideoUrl() 从网络层上报。 */
     fun injectJs(geckoView: GeckoView) {
-        try {
-            val session = geckoView.session ?: return
-            // GeckoView 的 JS 注入:通过 session.evaluateJS 执行脚本
-            // GeckoView 没有 addJavascriptInterface,需要用 WebExtension 或 message delegate
-            // 这里简化处理:仅注入监听 JS,通过 console.log 上报(由 consoleDelegate 捕获)
-            // 实际上 GeckoView 自带 MSE 已能直接播放视频,拦截器是可选的兜底
-            session.evaluateJS(buildJsHook())
-        } catch (t: Throwable) {
-            Log.w(TAG, "GeckoView injectJs failed", t)
-        }
+        // no-op:GeckoView 69 的 GeckoSession 没有 evaluate/evaluateJS 方法
+        // (该 API 在 GeckoView 81+ 才引入)
     }
 
     /** 网络层兜底拦截:由外层调用,把可能漏掉的视频 URL 上报一次(内部有去重) */
