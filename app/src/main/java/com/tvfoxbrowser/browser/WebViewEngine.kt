@@ -63,14 +63,24 @@ object WebViewEngine {
 
     private const val TAG = "XWalkEngine"
 
-    /** 电视端 UA:让站点识别为 Android TV */
+    /** 电视端 UA:让站点识别为 Android TV
+     *  注意:UA 里的 Chrome 版本号必须写新的(120+),否则 B站等现代站点
+     *  会根据 navigator.userAgent 里的 Chrome\/\d+ 判定浏览器太老而拒绝服务。
+     *  Crosswalk 实际内核是 Chromium 53,但 UA 是字符串,可以伪装成新版。 */
     private const val TV_UA =
-        "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.143 Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    /** 桌面端 UA(默认):用 Windows + Chrome 53,确保站点返回桌面版而非手机版
-     *  注意:Crosswalk 内核就是 Chromium 53,UA 必须匹配否则部分站点会异常 */
+    /** 桌面端 UA(默认):用 Windows + Chrome 120,确保站点返回桌面版而非手机版
+     *  注意:UA 里 Chrome 版本必须写 120+,否则 B站会提示"浏览器太老"。
+     *  虽然内核实际是 Chromium 53,但 UA 是字符串,伪装后能通过 B站的版本检测。
+     *  Chromium 53 对 ES2017(async/await)已支持,B站核心播放器基本能跑。 */
     private const val DESKTOP_UA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.143 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    /** 手机端 UA:部分站点(如 B站)手机版用更老的 JS 语法,
+     *  Chromium 53 兼容性更好。若桌面版页面白屏,可切到 mobile 模式。 */
+    private const val MOBILE_UA =
+        "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
     /** 当前全屏视频宿主容器(由 BrowserFragment 设置,用于 XWalkUIClient.onShowCustomView) */
     @Volatile
@@ -364,7 +374,7 @@ object WebViewEngine {
             xWalkView.settings.userAgentString = when (ua) {
                 SettingsManager.UA_TV -> TV_UA
                 SettingsManager.UA_DESKTOP -> DESKTOP_UA
-                else -> null // mobile 用 Crosswalk 默认 UA
+                else -> MOBILE_UA
             }
         }
     }
