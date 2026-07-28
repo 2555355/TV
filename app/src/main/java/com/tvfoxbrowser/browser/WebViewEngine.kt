@@ -1,344 +1,451 @@
 package com.tvfoxbrowser.browser
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.http.SslError
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebStorage
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import com.tvfoxbrowser.SettingsManager
-import com.tvfoxbrowser.TvFoxApp
 import com.tvfoxbrowser.video.VideoUrlInterceptor
-import org.mozilla.geckoview.AllowOrDeny
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.GeckoRuntime
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoView
-import org.mozilla.geckoview.StorageController
-import org.mozilla.geckoview.WebRequestError
 
 /**
- * GeckoView 嵌入式浏览器内核封装(替代 Crosswalk)。
+ * 系统 WebView 内核封装(替代 GeckoView)。
  *
- * 为什么换 GeckoView:
- * Crosswalk 内核是 Chromium 53(2016),不支持 CSS Grid / flex-gap / sticky
- * 等现代布局特性,网站 UI 错乱。GeckoView 69(2019,Gecko 69)完整支持现代
- * CSS,渲染兼容性远好于 Chromium 53。
+ * 为什么换 WebView:
+ * GeckoView 124 要求 2GB+ 内存,低端电视盒(434MB 可用)会 OOM 闪退。
+ * 系统 WebView 内存占用仅 ~20MB,且复用系统 native 库,APK 体积大幅缩小。
  *
- * API 对应关系:
- * - XWalkView / WebView  -> GeckoView (View) + GeckoSession (会话) + GeckoRuntime (全局运行时)
- * - WebViewClient        -> GeckoSession.NavigationDelegate
- * - WebChromeClient      -> GeckoSession.ContentDelegate + ProgressDelegate
- * - WebSettings          -> GeckoSession.settings + GeckoRuntime.settings
+ * 设计:
+ * - 每个 Tab 持有独立的 WebView 实例(支持多标签独立状态)
+ * - 通过 [createWebView] 创建配置好的 WebView 并绑定回调
+ * - UA 三档:mobile / desktop / tv(tv 用自定义 UA 让站点返回 TV 适配页)
  *
- * 关键差异:
- * - GeckoRuntime 全进程单例,只 create 一次
- * - 每个 Tab 对应一个 GeckoSession,共享同一个 GeckoRuntime
- * - GeckoView 是 View,GeckoSession 不是 View;通过 view.setSession(session) 关联
- * - GeckoView 69 要求 minSdk 21(Android 5.0),5.1 OK
- * - GeckoView 69 用 Java 8,不需要 Java 17(那是 130+ 才需要)
+ * 海尔 HRA920L (Android 5.1, API 22) 兼容性:
+ * - 所有 WebSettings 调用都用 try-catch 包裹,ROM 阉割/老内核缺少某些 API 时
+ *   不要让进程崩溃,只是该特性不可用。
+ * - createWebView 整体失败时返回 null,由 TabManager 决定如何降级。
+ *
+ * B站/视频站适配:
+ * - onShowCustomView/onHideCustomView:支持 H5 全屏视频(否则点全屏无反应)
+ * - onJsAlert/onJsConfirm/onJsPrompt:支持 JS 交互(否则某些站点卡死)
+ * - onReceivedSslError:SSL 证书错误时弹框让用户决定,而非静默失败
+ * - onReceivedError/onReceivedHttpError:把错误信息打到 logcat,便于排查
  */
 object WebViewEngine {
 
-    private const val TAG = "GeckoEngine"
+    private const val TAG = "WebViewEngine"
 
-    /** 电视端 UA:让站点识别为 Android TV
-     *  GeckoView 默认 UA 是 Gecko/69,这里覆盖成 Chrome 120 让 B站版本检测通过 */
+    /** 电视端 UA:让站点识别为 Android TV */
     private const val TV_UA =
-        "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 11; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+    /** 桌面端 UA(默认):用 Windows + Chrome 124,确保站点返回桌面版而非手机版
+     *  - Chrome/124 是 2024 年版本,绝大多数站点都识别
+     *  - 加完整 Win64 x64 避免被识别为平板 */
     private const val DESKTOP_UA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+    /** 移动端 UA:伪装 Chrome 120 Pixel 5,绕过 B站等站点"浏览器太老"检测。
+     *  系统 WebView 39 的真实 UA 会被 B站拒绝,必须覆盖成现代 Chrome。 */
     private const val MOBILE_UA =
         "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
-    /** 全屏视频宿主容器(由 BrowserFragment 设置) */
+    /** 当前全屏视频宿主容器(由 BrowserFragment 设置,用于 WebChromeClient.onShowCustomView) */
     @Volatile
     var fullscreenContainer: FrameLayout? = null
 
+    /** 当前正在全屏显示的 View(退出全屏时需要从容器移除) */
     private var currentCustomView: View? = null
+    private var currentCustomViewCallback: WebChromeClient.CustomViewCallback? = null
 
+    /**
+     * 视频地址拦截回调(由 BrowserFragment 设置)。
+     *
+     * 当 VideoUrlInterceptor 检测到 m3u8/mp4/flv 等视频地址时回调,
+     * BrowserFragment 在此启动外部播放器(MX Player / VLC)。
+     *
+     * 为 null 时不拦截视频(默认)。
+     */
     @Volatile
     var onVideoFound: ((url: String, title: String?) -> Unit)? = null
 
-    /** 每个 GeckoView 对应的拦截器 */
-    private val interceptors = mutableMapOf<GeckoView, VideoUrlInterceptor>()
+    /** 每个 WebView 对应的拦截器(注入 JS + 网络层兜底) */
+    private val interceptors = mutableMapOf<WebView, VideoUrlInterceptor>()
 
+    /** 主线程 Handler(把视频拦截回调切到主线程启动外部播放器) */
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    @Volatile
-    var currentActivity: Activity? = null
-
-    /** 全局 GeckoRuntime(进程内单例,只创建一次) */
-    @Volatile
-    private var runtime: GeckoRuntime? = null
-
-    /** GeckoRuntime 是否已初始化完成 */
-    @Volatile
-    private var runtimeReady = false
-
-    /** 初始化失败时的回调(供 MainActivity 显示错误页) */
-    @Volatile
-    var onRuntimeFailed: (() -> Unit)? = null
-
     /**
-     * 初始化 GeckoRuntime(必须在创建任何 GeckoSession 之前调用)。
-     * GeckoRuntime.create 是同步的(不像 Crosswalk 的 XWalkInitializer 异步)。
+     * 检测系统 WebView 是否可用。
+     * 国产电视 ROM 偶尔会阉割 WebView 包(/system/app/webview 缺失或被禁用),
+     * 此时创建 WebView 会抛 ClassNotFoundException / Resources$NotFoundException。
      */
-    fun initRuntime(context: Context) {
-        if (runtimeReady || runtime != null) return
+    fun isWebViewAvailable(context: Context): Boolean = try {
+        WebView.getCurrentWebViewPackage() != null
+    } catch (t: Throwable) {
+        // API < 26 没有 getCurrentWebViewPackage;且早期 ROM 可能不返回,做最终保险:
         try {
-            runtime = GeckoRuntime.create(context)
-            runtimeReady = runtime != null
-            // GeckoRuntimeSettings:setJavaScriptEnabled / setConsoleOutputEnabled
-            // 返回 GeckoRuntimeSettings(fluent builder,非 void),Kotlin 不能用属性赋值,
-            // 必须显式调用 setter。JS 开关走 runtime 级别(session 级只有 allowJavascript)。
-            runtime?.settings?.let { rs ->
-                runCatching { rs.setJavaScriptEnabled(SettingsManager.get().jsEnabled) }
-                runCatching { rs.setConsoleOutputEnabled(true) }
-            }
-            Log.i(TAG, "GeckoRuntime created: $runtimeReady")
-        } catch (t: Throwable) {
-            Log.e(TAG, "GeckoRuntime.create failed", t)
-            runtimeReady = false
-            onRuntimeFailed?.invoke()
+            WebView(context)
+            true
+        } catch (_: Throwable) {
+            false
         }
     }
 
-    fun isRuntimeReady(): Boolean = runtimeReady
-
     /**
-     * 创建一个配置好的 GeckoView + GeckoSession 并绑定事件回调。
-     * 必须在 initRuntime 完成后调用。
+     * 创建一个配置好的 WebView 并绑定事件回调。
+     * 调用方负责把返回的 WebView 加入/移出容器视图。
+     *
+     * @return 配置好的 WebView;若系统 WebView 不可用或初始化失败,返回 null
+     *         (调用方需自行降级,不能让进程崩溃)
      */
     @SuppressLint("SetJavaScriptEnabled")
-    fun createWebView(callbacks: SessionCallbacks): GeckoView? {
-        val activity = currentActivity ?: run {
-            Log.e(TAG, "currentActivity is null, cannot create GeckoView")
-            return null
-        }
-        val rt = runtime ?: run {
-            Log.e(TAG, "runtime is null, call initRuntime first")
-            return null
-        }
+    fun createWebView(callbacks: SessionCallbacks): WebView? {
+        val context = runCatching { com.tvfoxbrowser.TvFoxApp.getApp() }.getOrNull()
+            ?: return null
 
-        val geckoView = try {
-            GeckoView(activity)
+        val webView = try {
+            WebView(context)
         } catch (t: Throwable) {
-            Log.e(TAG, "GeckoView instantiation failed", t)
+            // 国产 ROM 上 WebView 包被阉割时会在此抛异常
+            Log.e(TAG, "WebView instantiation failed", t)
             return null
         }
 
-        val session = try {
-            GeckoSession()
-        } catch (t: Throwable) {
-            Log.e(TAG, "GeckoSession instantiation failed", t)
-            return null
-        }
-
-        // 视频拦截器
+        // 为该 WebView 创建视频拦截器(JS 注入 + 网络层兜底)
         val interceptor = VideoUrlInterceptor { url, title ->
+            // 主线程回调(BrowserFragment 在此启动外部播放器)
             mainHandler.post {
-                Log.i(TAG, "Video intercepted: $url")
+                Log.i(TAG, "Video intercepted, dispatching to launcher: $url")
                 onVideoFound?.invoke(url, title)
             }
         }
+        synchronized(interceptors) { interceptors[webView] = interceptor }
 
         try {
-            geckoView.layoutParams = ViewGroup.LayoutParams(
+            webView.layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            geckoView.isFocusable = false
-            geckoView.isFocusableInTouchMode = false
-            runCatching { geckoView.setLayerType(View.LAYER_TYPE_HARDWARE, null) }
+            webView.isFocusable = false
+            webView.isFocusableInTouchMode = false
+            // 启用硬件加速层(视频/动画必须),API 14+ 默认硬件,显式设置保险
+            runCatching { webView.setLayerType(View.LAYER_TYPE_HARDWARE, null) }
         } catch (t: Throwable) {
-            Log.w(TAG, "GeckoView base setup failed", t)
+            Log.w(TAG, "WebView base setup failed", t)
         }
 
-        // 配置 session settings
-        // GeckoView 69 GeckoSessionSettings 仅有:allowJavascript / useTrackingProtection /
-        // suspendMediaWhenInactive / userAgentMode / displayMode / viewportMode / userAgentOverride。
-        // 注意:setUsePrivateMode / setUseMultiprocess 是 private,无法外部赋值(默认 false)。
-        // domStorageEnabled / allowFileAccess / allowContentAccess / mediaPlaybackRequiresUserGesture
-        // 在 GeckoView 69 不存在(Gecko 内核 DOM 存储始终开启;文件访问通过 loadUri("file://") 处理;
-        // 媒体手势由 GeckoRuntimeSettings 控制,非 session 级)。
+        // WebSettings 每个属性都单独包 try-catch:
+        // 老 WebView 内核缺少某些 API setter 时,只跳过该项,不致命。
         try {
-            val s = session.settings
-            runCatching { s.allowJavascript = SettingsManager.get().jsEnabled }
+            with(webView.settings) {
+                runCatching { javaScriptEnabled = SettingsManager.get().jsEnabled }
+                runCatching { domStorageEnabled = true }       // localStorage/sessionStorage,B站必须
+                runCatching { databaseEnabled = true }         // WebSQL/IndexedDB 老接口
+                runCatching { useWideViewPort = true }         // 桌面页面按 viewport 缩放
+                runCatching { loadWithOverviewMode = true }    // 默认缩放到屏幕宽
+                runCatching { cacheMode = WebSettings.LOAD_DEFAULT }
+                runCatching { builtInZoomControls = false }
+                runCatching { displayZoomControls = false }
+                runCatching { setSupportZoom(false) }
+                runCatching { mediaPlaybackRequiresUserGesture = false } // 自动播放,视频站必需
+                // 老站点文件/内容访问
+                runCatching { allowFileAccess = true }
+                runCatching { allowContentAccess = true }
+                // 视频站必需:允许 JS 自动打开窗口、跨域
+                runCatching { javaScriptCanOpenWindowsAutomatically = true }
+                runCatching { setSupportMultipleWindows(false) }
+                // B 站播放器需要的额外设置
+                runCatching { blockNetworkImage = false }       // 不要拦截图片
+                runCatching { loadsImagesAutomatically = true } // 自动加载图片
+                // 老 Android 上的 Geolocation/FormData(部分站点登录需要)
+                runCatching { setGeolocationEnabled(true) }
+                // AppCache:Android 5.1 老 WebView 必须显式开,否则部分站点资源加载失败。
+                // 但 setAppCacheEnabled/setAppCachePath 在 compileSdk 26 弃用,
+                // compileSdk 34 已被 Kotlin 编译器彻底移除,这里用反射调用。
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                    runCatching {
+                        val cls = WebSettings::class.java
+                        cls.getMethod("setAppCacheEnabled", java.lang.Boolean.TYPE)
+                            .invoke(this, true)
+                        cls.getMethod("setAppCachePath", String::class.java)
+                            .invoke(this, context.cacheDir.absolutePath)
+                    }
+                }
+                // 允许混合内容(部分老站点 http 资源),API 21+
+                // 注意:MIXED_CONTENT_ALWAYS_ALLOW 比 COMPATIBILITY_MODE 更宽松,
+                // 国产 ROM 老 WebView 上后者偶尔仍会拒绝 http 子资源,改用 ALLOW 确保 B 站图片 CDN 能出
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    runCatching { mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW }
+                }
+            }
         } catch (t: Throwable) {
-            Log.w(TAG, "GeckoSession settings failed", t)
+            Log.w(TAG, "WebSettings bulk setup failed", t)
         }
 
-        // 关联 view-session-runtime
-        try {
-            session.open(rt)
-            geckoView.setSession(session)
-        } catch (t: Throwable) {
-            Log.e(TAG, "session.open / setSession failed", t)
+        // 远程调试:电视上没 adb 时,可用 chrome://inspect 在同网段电脑调试
+        // 排查「页面黑白」类问题神器。固定开启(没性能影响)。
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                WebView.setWebContentsDebuggingEnabled(true)
+            }
         }
 
-        // 把 interceptor 绑到 view(供 onLoadFinished 注入 JS 用)
-        synchronized(interceptors) { interceptors[geckoView] = interceptor }
+        runCatching { applyUa(webView) }
 
-        // 应用 UA
-        runCatching { applyUa(geckoView) }
+        // Cookie
+        runCatching {
+            CookieManager.getInstance().setAcceptCookie(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+            }
+        }
 
-        // ===== NavigationDelegate(类似 WebViewClient)=====
         try {
-            session.navigationDelegate = object : GeckoSession.NavigationDelegate {
-                override fun onLocationChange(
-                    session: GeckoSession, url: String?
-                ) {
-                    val u = url.orEmpty()
-                    callbacks.onUrlChanged(u)
-                    callbacks.onSecurityChanged(u.startsWith("https://"))
+            webView.webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    callbacks.onProgressChanged(0, isLoading = true)
+                    callbacks.onUrlChanged(url.orEmpty())
+                    callbacks.onSecurityChanged(url.orEmpty().startsWith("https://"))
                 }
 
-                override fun onCanGoBack(
-                    session: GeckoSession, canGoBack: Boolean
-                ) {
-                    callbacks.onCanBackChanged(canGoBack)
-                }
-
-                override fun onCanGoForward(
-                    session: GeckoSession, canGoForward: Boolean
-                ) {
-                    callbacks.onCanForwardChanged(canGoForward)
-                }
-
-                /**
-                 * 加载请求前回调:这里做 URL 重写(桌面版 -> 手机版)。
-                 * GeckoView 69 直接返回目标 URI 即可重定向。
-                 */
-                override fun onLoadRequest(
-                    session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest
-                ): GeckoResult<AllowOrDeny>? {
-                    val original = request.uri.orEmpty()
-                    val rewritten = rewriteToMobile(original)
-                    return if (rewritten != null && rewritten != original) {
-                        Log.d(TAG, "URL rewrite: $original -> $rewritten")
-                        // 异步加载新 URL,并拒绝原请求
-                        mainHandler.post { runCatching { session.loadUri(rewritten) } }
-                        GeckoResult.fromValue(AllowOrDeny.DENY)
-                    } else {
-                        GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    callbacks.onProgressChanged(100, isLoading = false)
+                    view?.title?.let { callbacks.onTitleChanged(it) }
+                    view?.let {
+                        callbacks.onCanBackChanged(it.canGoBack())
+                        callbacks.onCanForwardChanged(it.canGoForward())
+                    }
+                    // 同步 Cookie 到持久化(B 站登录态依赖)
+                    runCatching { CookieManager.getInstance().flush() }
+                    // 注入视频拦截 JS(每个页面加载完后重新注入,SPA 路由切换也会触发)
+                    view?.let { v ->
+                        synchronized(interceptors) { interceptors[v] }?.injectJs(v)
                     }
                 }
 
-                /** SSL 证书错误:GeckoView 默认直接拒绝,这里弹框让用户选择 */
-                override fun onLoadError(
-                    session: GeckoSession, uri: String?, error: WebRequestError
-                ): GeckoResult<String>? {
-                    Log.w(TAG, "Load error: category=${error.category} code=${error.code} uri=$uri")
-                    // 返回 data: URI 显示错误页(不阻断整个会话)
-                    return null
-                }
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "set navigationDelegate failed", t)
-        }
-
-        // ===== ProgressDelegate(类似 onProgressChanged)=====
-        try {
-            session.progressDelegate = object : GeckoSession.ProgressDelegate {
-                override fun onProgressChange(session: GeckoSession, progress: Int) {
-                    callbacks.onProgressChanged(progress, isLoading = progress in 1..99)
+                override fun shouldOverrideUrlLoading(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): Boolean {
+                    // URL 重写:UA 为 mobile 模式时,把桌面版 URL 改写成手机版
+                    // (手机版页面在 TV 上单列布局,排版更友好)
+                    val original = request?.url?.toString().orEmpty()
+                    val rewritten = rewriteToMobile(original)
+                    if (rewritten != null && rewritten != original) {
+                        Log.d(TAG, "URL rewrite: $original -> $rewritten")
+                        view?.loadUrl(rewritten)
+                        return true
+                    }
+                    return false
                 }
 
-                override fun onPageStart(session: GeckoSession, url: String) {
-                    callbacks.onProgressChanged(0, isLoading = true)
-                    callbacks.onUrlChanged(url)
+                /** 网络层兜底拦截:所有请求都会经过这里,捕获 JS 层漏掉的视频 URL */
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    if (view != null && request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        synchronized(interceptors) { interceptors[view] }
+                            ?.maybeInterceptRequest(request)
+                    }
+                    return null  // 不真正拦截,只观察
                 }
 
-                override fun onPageStop(session: GeckoSession, success: Boolean) {
-                    callbacks.onProgressChanged(100, isLoading = false)
-                    // GeckoView 69 没有 session.evaluateJS() API(该 API 在 GeckoView 81+ 才引入),
-                    // 因此无法像系统 WebView 那样注入视频拦截 JS / 兼容 CSS。
-                    // 但 Gecko 69 内核已原生支持现代 CSS Grid / flex-gap / MSE / H.264 / HLS,
-                    // B站等视频站点可直接在网页内播放,无需 JS 兜底。
-                }
-
-                override fun onSecurityChange(
-                    session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation
+                /** SSL 证书错误:默认 WebView 会取消加载,导致 https 站点完全打不开。
+                 *  这里弹框让用户决定是否继续(国产 ROM 老 WebView 证书链校验常误报)。
+                 *  用户选「继续」才 proceed,安全风险可控。 */
+                override fun onReceivedSslError(
+                    view: WebView?,
+                    handler: SslErrorHandler?,
+                    error: SslError?
                 ) {
-                    // ProgressDelegate.onPageStart/onSecurityChange 参数标注 @NonNull,
-                    // Kotlin 覆盖时必须用非空类型(不能用 String? / SecurityInformation?)。
-                    callbacks.onSecurityChanged(securityInfo.isSecure)
+                    Log.w(TAG, "SSL error: ${error?.primaryError} url=${error?.url}")
+                    try {
+                        val ctx = view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp()
+                        AlertDialog.Builder(ctx)
+                            .setTitle("SSL 证书错误")
+                            .setMessage("该站点的 SSL 证书有问题(${error?.primaryError}),是否仍要继续访问?\n\nURL: ${error?.url}")
+                            .setPositiveButton("继续") { _, _ -> handler?.proceed() }
+                            .setNegativeButton("取消") { _, _ -> handler?.cancel() }
+                            .setOnCancelListener { handler?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        // UI 上下文拿不到时,默认 proceed 避免站点完全打不开
+                        Log.w(TAG, "Cannot show SSL dialog, proceed anyway", t)
+                        handler?.proceed()
+                    }
+                }
+
+                /** 网络层错误(DNS/连接失败等),打到 logcat 便于排查「连不上网」问题 */
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    Log.w(TAG, "Resource error: ${error?.description} url=${request?.url}")
+                    super.onReceivedError(view, request, error)
+                }
+
+                /** HTTP 错误(404/500 等) */
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?
+                ) {
+                    Log.w(TAG, "HTTP ${errorResponse?.statusCode} url=${request?.url}")
+                    super.onReceivedHttpError(view, request, errorResponse)
                 }
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "set progressDelegate failed", t)
+            Log.w(TAG, "setWebViewClient failed", t)
         }
 
-        // ===== ContentDelegate(类似 WebChromeClient:标题/全屏)=====
         try {
-            session.contentDelegate = object : GeckoSession.ContentDelegate {
-                override fun onTitleChange(session: GeckoSession, title: String?) {
+            webView.webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    callbacks.onProgressChanged(newProgress, isLoading = newProgress in 1..99)
+                }
+
+                override fun onReceivedTitle(view: WebView?, title: String?) {
                     callbacks.onTitleChanged(title.orEmpty())
                 }
 
-                /** H5 视频全屏:B站点全屏必需 */
-                override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
-                    if (fullScreen) {
-                        Log.d(TAG, "entering fullscreen")
-                        // GeckoView 的全屏由 GeckoView 自身处理(onFullScreen 后 view 自动全屏)
-                        // 这里把 GeckoView 移到 fullscreenContainer
-                        val container = fullscreenContainer
-                        if (container != null && geckoView.parent != container) {
-                            runCatching {
-                                (geckoView.parent as? ViewGroup)?.removeView(geckoView)
-                                container.removeAllViews()
-                                container.addView(
-                                    geckoView,
-                                    FrameLayout.LayoutParams(
-                                        FrameLayout.LayoutParams.MATCH_PARENT,
-                                        FrameLayout.LayoutParams.MATCH_PARENT
-                                    )
+                // ===== H5 视频全屏(B 站/YouTube 点全屏必需)=====
+                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                    Log.d(TAG, "onShowCustomView: entering fullscreen")
+                    // 先退出已有全屏(直接调用本 object 的清理逻辑,
+                    // 不调用 onHideCustomView() 本身,避免 Kotlin 解析问题)
+                    performHideCustomView()
+                    currentCustomView = view
+                    currentCustomViewCallback = callback
+                    val container = fullscreenContainer
+                    if (view != null && container != null) {
+                        runCatching {
+                            container.removeAllViews()
+                            container.addView(
+                                view,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
                                 )
-                                container.visibility = View.VISIBLE
-                            }
+                            )
+                            container.visibility = View.VISIBLE
                         }
                     } else {
-                        Log.d(TAG, "leaving fullscreen")
-                        exitFullscreenRestore(geckoView)
+                        Log.w(TAG, "onShowCustomView: container or view is null, cannot display")
                     }
                 }
 
-                override fun onCloseRequest(session: GeckoSession) {
-                    // 网页请求关闭窗口,忽略
+                override fun onHideCustomView() {
+                    Log.d(TAG, "onHideCustomView: leaving fullscreen")
+                    performHideCustomView()
+                }
+
+                // ===== JS 弹框(缺这些会让某些站点卡死)=====
+                override fun onJsAlert(
+                    view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?
+                ): Boolean {
+                    try {
+                        AlertDialog.Builder(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                            .setTitle("提示")
+                            .setMessage(message ?: "")
+                            .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                            .setOnCancelListener { result?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        result?.confirm()
+                    }
+                    return true
+                }
+
+                override fun onJsConfirm(
+                    view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?
+                ): Boolean {
+                    try {
+                        AlertDialog.Builder(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                            .setTitle("确认")
+                            .setMessage(message ?: "")
+                            .setPositiveButton("确定") { _, _ -> result?.confirm() }
+                            .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                            .setOnCancelListener { result?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        result?.cancel()
+                    }
+                    return true
+                }
+
+                override fun onJsPrompt(
+                    view: WebView?, url: String?, message: String?, defaultValue: String?,
+                    result: android.webkit.JsPromptResult?
+                ): Boolean {
+                    try {
+                        val edit = android.widget.EditText(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                        edit.setText(defaultValue ?: "")
+                        AlertDialog.Builder(view?.context ?: com.tvfoxbrowser.TvFoxApp.getApp())
+                            .setTitle(message ?: "输入")
+                            .setView(edit)
+                            .setPositiveButton("确定") { _, _ -> result?.confirm(edit.text.toString()) }
+                            .setNegativeButton("取消") { _, _ -> result?.cancel() }
+                            .setOnCancelListener { result?.cancel() }
+                            .show()
+                    } catch (t: Throwable) {
+                        result?.cancel()
+                    }
+                    return true
+                }
+
+                /** 控制台日志转发到 logcat,方便排查页面 JS 报错 */
+                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                    Log.d("WebViewConsole", "[${consoleMessage?.messageLevel()}] ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}")
+                    return true
                 }
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "set contentDelegate failed", t)
+            Log.w(TAG, "setWebChromeClient failed", t)
         }
 
-        return geckoView
+        return webView
     }
 
-    /** 应用 UA */
-    fun applyUa(geckoView: GeckoView) {
+    /** 应用 UA(切换 UA 模式后对所有 WebView 重新调用) */
+    fun applyUa(webView: WebView) {
         val ua = SettingsManager.get().uaMode
         runCatching {
-            val s = geckoView.session?.settings ?: return@runCatching
-            s.userAgentOverride = when (ua) {
+            webView.settings.userAgentString = when (ua) {
                 SettingsManager.UA_TV -> TV_UA
                 SettingsManager.UA_DESKTOP -> DESKTOP_UA
-                else -> MOBILE_UA
+                else -> MOBILE_UA // mobile 用 Chrome 120 伪装,绕过 B站版本检测
             }
         }
     }
 
-    fun reapplyUaForAll(geckoViews: List<GeckoView>) {
-        geckoViews.forEach { runCatching { applyUa(it) } }
+    /** UA 模式切换后,对所有现存 WebView 重新应用 */
+    fun reapplyUaForAll(webViews: List<WebView>) {
+        webViews.forEach { runCatching { applyUa(it) } }
     }
 
     /**
-     * URL 重写:把桌面版 URL 改写成手机版。
-     * 虽然 Gecko 69 支持现代 CSS,但手机版页面在 TV 上排版更友好(单列布局)。
-     * 只在 UA 模式为 mobile 时生效。 */
+     * URL 重写:UA 为 mobile 模式时,把桌面版 URL 改写成手机版。
+     * 手机版页面在 TV 上单列布局,排版更友好。
+     * 只在 UA 模式为 mobile 时生效。
+     */
     private fun rewriteToMobile(url: String): String? {
         if (SettingsManager.get().uaMode != SettingsManager.UA_MOBILE) return null
         if (url.isBlank()) return null
@@ -362,75 +469,69 @@ object WebViewEngine {
         }.getOrNull()
     }
 
-    /**
-     * 注入兼容性 CSS —— GeckoView 69 无 evaluateJS API,此处为空实现。
-     * Gecko 69 内核已原生支持现代 CSS,无需兜底注入。 */
-    private fun injectCompatCss(geckoView: GeckoView) {
-        // no-op:GeckoView 69 的 GeckoSession 没有 evaluate/evaluateJS 方法
-    }
-
-    /** 退出全屏:把 GeckoView 从 fullscreenContainer 移回原容器 */
+    /** 退出当前全屏(供 BrowserFragment 在 BACK 键时调用) */
     fun exitFullscreenIfAny(): Boolean {
-        // GeckoView 的全屏由 onFullScreen(false) 回调处理,这里返回 false
-        // 让 BrowserFragment 继续走默认 BACK 逻辑(session.goBack)
+        if (currentCustomView != null) {
+            performHideCustomView()
+            return true
+        }
         return false
     }
 
-    /** 把 GeckoView 从全屏容器移回原容器 */
-    private fun exitFullscreenRestore(geckoView: GeckoView) {
-        val container = fullscreenContainer ?: return
-        runCatching {
-            if (geckoView.parent == container) {
-                container.removeView(geckoView)
-                container.visibility = View.GONE
+    /**
+     * 实际执行退出全屏的清理逻辑。
+     * 抽成独立函数,以便 WebChromeClient.onShowCustomView 和外部 BACK 键
+     * 都能调用,而不必互相依赖 override 方法本身(Kotlin 在匿名 object 里
+     * 调用同 object 的 override 方法偶尔会 Unresolved reference)。
+     */
+    private fun performHideCustomView() {
+        val container = fullscreenContainer
+        currentCustomView?.let { cv ->
+            runCatching {
+                (cv.parent as? ViewGroup)?.removeView(cv)
             }
         }
-        // GeckoView 从全屏容器移除后,需要重新 add 到 web_view_container
-        // 这个由 TabManager 在 setActive 时处理;若当前是 active tab,手动 re-add
-        val originalParent = geckoView.tag as? ViewGroup
-        if (originalParent != null && geckoView.parent == null) {
-            runCatching { originalParent.addView(geckoView) }
+        container?.let {
+            runCatching {
+                it.visibility = View.GONE
+                it.removeAllViews()
+            }
         }
+        currentCustomViewCallback?.let {
+            runCatching { it.onCustomViewHidden() }
+        }
+        currentCustomView = null
+        currentCustomViewCallback = null
     }
 
-    // -------- 清理操作 --------
+    // -------- 清理操作(供 SettingsFragment 调用) --------
 
     fun clearCache() {
-        // GeckoView 69:通过 runtime.storageController 清网络/图片缓存
-        runCatching {
-            runtime?.storageController?.clearData(StorageController.ClearFlags.ALL_CACHES)
-        }
+        runCatching { WebStorage.getInstance().deleteAllData() }
     }
 
     fun clearCookies() {
-        // GeckoView 用自己的 cookie jar,不通过 android.webkit.CookieManager
         runCatching {
-            runtime?.storageController?.clearData(StorageController.ClearFlags.COOKIES)
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
         }
     }
 
     fun clearAllBrowsingData() {
+        runCatching { WebStorage.getInstance().deleteAllData() }
         runCatching {
-            runtime?.storageController?.clearData(StorageController.ClearFlags.ALL)
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
         }
-    }
-
-    /** 判断 URL 是否是视频地址 */
-    private fun isVideoUrl(url: String): Boolean {
-        if (url.isBlank()) return false
-        val lower = url.substringBefore('?').lowercase()
-        return lower.endsWith(".m3u8") ||
-               lower.endsWith(".flv") ||
-               lower.endsWith(".mp4") ||
-               lower.endsWith(".m4v") ||
-               lower.endsWith(".mkv") ||
-               lower.endsWith(".webm") ||
-               lower.contains("/flv/") ||
-               lower.contains(".m3u8?")
+        // 清理 WebView 历史记录(老 API 才有 clearFormData,API 26+ 弃用但保留)
+        runCatching {
+            android.webkit.WebViewDatabase.getInstance(com.tvfoxbrowser.TvFoxApp.getApp())
+                .clearFormData()
+        }
     }
 }
 
-/** 单个 GeckoView 的事件回调 */
+/** 单个 WebView 的事件回调(接口保持与原 GeckoEngine 一致,TabManager 无需改动) */
 interface SessionCallbacks {
     fun onUrlChanged(url: String)
     fun onTitleChanged(title: String)
@@ -440,6 +541,7 @@ interface SessionCallbacks {
     fun onCanForwardChanged(canForward: Boolean)
 }
 
+/** 聚合后的回调目标(由 TabManager 实现),携带 tabId 区分来源 */
 interface AggregatedTarget {
     fun onUrlChanged(tabId: Long, url: String)
     fun onTitleChanged(tabId: Long, title: String)
@@ -449,6 +551,7 @@ interface AggregatedTarget {
     fun onCanForwardChanged(tabId: Long, canForward: Boolean)
 }
 
+/** 把单个 WebView 的回调按 tabId 转发给 TabManager */
 class SessionCallbackAggregator(
     val tabId: Long,
     private val target: AggregatedTarget

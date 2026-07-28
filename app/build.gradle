@@ -11,21 +11,16 @@ android {
         applicationId "com.tvfoxbrowser"
         minSdk 21
         targetSdk 34
-        versionCode 15
-        versionName "4.0-gecko-armv7"
+        versionCode 16
+        versionName "5.0-webview"
         // 只保留中英语言资源,移除 AndroidX 自带的其他语言
         resourceConfigurations += ['zh', 'zh-rCN', 'zh-rTW', 'en']
-
-        ndk {
-            // GeckoView armeabi-v7a 专属包:只含 armeabi-v7a 的 libxul.so / libnss3.so 等
-            // (geckoview-armeabi-v7a:69.0.20190903125908)
-            // 目标设备:海尔 HRA920L (Android 5.1, ro.product.cpu.abi = armeabi-v7a)
-            abiFilters 'armeabi-v7a'
-        }
+        // 系统 WebView 复用 ROM 自带 native 库,无需打包任何 .so,APK 极小(~5MB)
+        // 也不需要 abiFilters:同一 APK 在 armv7/arm64/x86 设备都能装
     }
 
     // 不再需要 ABI splits:
-    // GeckoView armeabi-v7a 专属包自带 armeabi-v7a native 库,单一 APK 即可在 32 位 armv7 设备运行。
+    // 系统 WebView 无 native 库打包,单一通用 APK 即可。
 
     buildTypes {
         release {
@@ -86,13 +81,12 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
 
     // ===== 浏览器内核 =====
-    // GeckoView 嵌入式 Gecko 内核(Mozilla,Firefox 同款引擎)
-    // 替代 Crosswalk(Chromium 53 太老,不支持现代 CSS,网站 UI 错乱)
-    // GeckoView 69(2019,Gecko 69)完整支持 CSS Grid / flex-gap / sticky / MSE,
-    // 渲染兼容性远好于 Chromium 53。
-    // armeabi-v7a 专属包(目标设备海尔 HRA920L 为 32 位 armv7,Android 5.1)
-    // minSdk 21(Android 5.0),Java 8,无需 Java 17(那是 GeckoView 130+ 才需要)
-    implementation 'org.mozilla.geckoview:geckoview-armeabi-v7a:69.0.20190903125908'
+    // 使用 Android 系统 WebView(复用 ROM 自带内核,APK 仅 ~5MB)。
+    // 已弃用 GeckoView(需 2GB RAM,海尔 HRA920L 仅 434MB 会 OOM)和 Crosswalk(Chromium 53 UI 错乱)。
+    // 系统 WebView 内核版本取决于 ROM:海尔 Android 5.1 自带 Chrome 39(不支持 MSE),
+    //   需用户侧载升级 "Android System WebView" APK 到 70+ 才能播放 B站。
+    // 代码层面已用 Chrome 120 伪装 UA 绕过 B站版本检测,但 MSE 仍需内核本身支持。
+    // 无需任何 implementation 依赖,android.webkit.WebView 是 Android SDK 自带。
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'

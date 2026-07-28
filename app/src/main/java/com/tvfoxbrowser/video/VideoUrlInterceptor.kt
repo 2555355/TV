@@ -3,24 +3,24 @@ package com.tvfoxbrowser.video
 import android.os.Build
 import android.util.Log
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoView
+import android.webkit.WebViewClient
+import androidx.annotation.RequiresApi
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 视频地址拦截器(同时支持系统 WebView 和 GeckoView)。
+ * 视频地址拦截器。
  *
  * 三道防线拦截视频 URL:
  * 1. JS 注入监听 video.src 属性变化(B 站等大部分站点)
  * 2. JS Hook XMLHttpRequest 和 fetch(拦截 m3u8 动态请求)
- * 3. 注入 JS 后,GeckoView 通过 GeckoSession.runtimeDispatcher 兜底
+ * 3. shouldInterceptRequest 网络层兜底
  *
- * GeckoView 自带完整 MSE/H.264/HLS 支持,B 站视频可直接在网页内播放,
- * 此拦截器主要用于:flv 等老格式 / 仍允许用户切换到 MX Player 硬解。
+ * 拦截到后回调 onVideoFound,由 BrowserFragment 调起 ExternalPlayerLauncher。
  *
- * 防重复:同一 URL 在 60 秒内只触发一次。
+ * 防重复:同一 URL 在 60 秒内只触发一次(避免页面内多个 video 元素重复触发)
  */
 class VideoUrlInterceptor(
     private val onVideoFound: (url: String, title: String?) -> Unit
@@ -28,54 +28,63 @@ class VideoUrlInterceptor(
 
     private val TAG = "VideoInterceptor"
 
+    /** 已上报过的视频 URL(防止短时间内重复触发) */
     private val reported = ConcurrentHashMap<String, Long>()
-    private val REPORT_COOLDOWN_MS = 60_000L
+    private val REPORT_COOLDOWN_MS = 60_000L  // 60 秒内同 URL 只触发一次
 
+    /** JS 注入到页面后暴露的全局对象名: window.TvFoxVideo */
     private val JS_OBJECT_NAME = "TvFoxVideo"
 
-    /** 给系统 WebView 用的注入方法(保留兼容) */
+    /**
+     * 在 onPageFinished 注入 JS,监听 video.src 和 XHR/fetch。
+     *
+     * 注入时机选 onPageFinished 而非 onPageStarted:
+     * - onPageStarted 时 DOM 还没构建完,querySelector 找不到 video
+     * - 注入太早可能被站点 CSP 拦截
+     */
     fun injectJs(webView: WebView) {
+        // 1. 注册 JS 接口(Android 4.2+ 的 @JavascriptInterface 安全机制)
+        // 注意:addJavascriptInterface 必须在主线程,且一个 WebView 只能注册一次同名对象
         try {
             webView.removeJavascriptInterface(JS_OBJECT_NAME)
             webView.addJavascriptInterface(JsCallback(), JS_OBJECT_NAME)
-            webView.evaluateJavascript(buildJsHook(), null)
         } catch (t: Throwable) {
-            Log.w(TAG, "WebView injectJs failed", t)
+            Log.w(TAG, "addJavascriptInterface failed", t)
+        }
+
+        // 2. 注入监听脚本
+        val js = buildJsHook()
+        try {
+            webView.evaluateJavascript(js, null)
+            Log.d(TAG, "JS hook injected")
+        } catch (t: Throwable) {
+            // Android 4.4 以下没有 evaluateJavascript,用 loadURL("javascript:") 兜底
+            Log.w(TAG, "evaluateJavascript failed, fallback to loadUrl", t)
+            try {
+                webView.loadUrl("javascript:" + js)
+            } catch (_: Throwable) {}
         }
     }
 
-    /** 给 GeckoView 用的注入方法 —— GeckoView 69 无 evaluateJS API,此处为空实现。
-     *  Gecko 69 内核原生支持 MSE/H.264/HLS,B站等视频可直接在网页内播放,
-     *  无需 JS 拦截兜底。视频 URL 仍可通过 reportVideoUrl() 从网络层上报。 */
-    fun injectJs(geckoView: GeckoView) {
-        // no-op:GeckoView 69 的 GeckoSession 没有 evaluate/evaluateJS 方法
-        // (该 API 在 GeckoView 81+ 才引入)
-    }
-
-    /** 网络层兜底拦截:由外层调用,把可能漏掉的视频 URL 上报一次(内部有去重) */
-    fun reportVideoUrl(url: String) {
-        reportOnce(url, null)
-    }
-
-    private fun reportOnce(url: String, title: String?) {
-        if (url.isBlank()) return
-        if (!isVideoUrl(url)) return
-        val now = System.currentTimeMillis()
-        val lastTime = reported[url]
-        if (lastTime != null && now - lastTime < REPORT_COOLDOWN_MS) {
-            return
-        }
-        reported[url] = now
-        if (reported.size > 100) {
-            val it = reported.entries.iterator()
-            while (it.hasNext()) {
-                if (now - it.next().value > REPORT_COOLDOWN_MS) it.remove()
+    /**
+     * 网络层兜底拦截:WebResourceRequest 是网络层所有请求都会经过的。
+     * 注意:只在 API 21+ 的 shouldInterceptRequest 里调用。
+     */
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+    fun maybeInterceptRequest(request: WebResourceRequest): WebResourceResponse? {
+        try {
+            val url = request.url?.toString() ?: return null
+            if (isVideoUrl(url)) {
+                Log.d(TAG, "Network layer caught video URL: $url")
+                onVideoFound(url, null)
             }
-        }
-        Log.i(TAG, "Video URL reported: $url")
-        onVideoFound(url, title)
+        } catch (_: Throwable) {}
+        // 永远返回 null:不真正拦截请求,只观察
+        // 真正拦截会导致 B 站播放器卡死,我们要的是"边播边报"
+        return null
     }
 
+    /** 判断 URL 是否是视频地址 */
     private fun isVideoUrl(url: String): Boolean {
         if (url.isBlank()) return false
         val lower = url.substringBefore('?').lowercase()
@@ -89,11 +98,34 @@ class VideoUrlInterceptor(
                lower.contains(".m3u8?")
     }
 
+    /** 去重后回调 */
+    private fun reportOnce(url: String, title: String?) {
+        if (url.isBlank()) return
+        if (!isVideoUrl(url)) return
+        val now = System.currentTimeMillis()
+        val lastTime = reported[url]
+        if (lastTime != null && now - lastTime < REPORT_COOLDOWN_MS) {
+            return  // 冷却中,跳过
+        }
+        reported[url] = now
+        // 清理过期项(防止内存泄漏)
+        if (reported.size > 100) {
+            val it = reported.entries.iterator()
+            while (it.hasNext()) {
+                if (now - it.next().value > REPORT_COOLDOWN_MS) it.remove()
+            }
+        }
+        Log.i(TAG, "Video URL reported: $url")
+        onVideoFound(url, title)
+    }
+
     /**
      * JS 注入脚本。
-     * GeckoView 没有 addJavascriptInterface,这里通过 console.log 上报视频 URL,
-     * 由 GeckoSession.contentDelegate.onConsoleMessage 捕获(WebViewEngine 可扩展)。
-     * 当前 GeckoView 自带 MSE 已能直接播放视频,此 JS 仅作观察用。
+     * 关键点:
+     * - 用 Object.defineProperty 劫持 video.src 的 setter
+     * - Hook XMLHttpRequest.open 和 fetch
+     * - MutationObserver 监听新插入的 video 标签(动态加载的视频)
+     * - try/catch 包裹,任一步失败不影响页面
      */
     private fun buildJsHook(): String = """
 (function() {
@@ -103,11 +135,12 @@ class VideoUrlInterceptor(
     function report(url) {
         try {
             if (typeof url !== 'string' || !url) return;
+            // 过滤明显不是视频的
             var lower = url.split('?')[0].toLowerCase();
             if (!(/\.(m3u8|flv|mp4|m4v|mkv|webm)(\?|$)/.test(lower))) return;
+            // 相对路径转绝对
             var abs = new URL(url, location.href).href;
-            // GeckoView 没有 JS bridge,用 console.log 上报
-            console.log('TvFoxVideo:' + abs);
+            window.TvFoxVideo && window.TvFoxVideo.onVideo(abs);
         } catch(e) {}
     }
 
@@ -129,7 +162,9 @@ class VideoUrlInterceptor(
                 });
             }
         } catch(e) {}
+        // 已存在的 src
         if (v.src) report(v.src);
+        // 监听 source 标签变化
         v.addEventListener('loadstart', function() {
             try { if (v.currentSrc) report(v.currentSrc); } catch(e) {}
         });
@@ -193,6 +228,7 @@ class VideoUrlInterceptor(
     try { hookAllVideos(); } catch(e) {}
     try { hookMutation(); } catch(e) {}
 
+    // B 站等 SPA 站点会在路由切换后延迟插入 video,定时轮询兜底
     try {
         setInterval(function() {
             try { hookAllVideos(); } catch(e) {}
@@ -201,7 +237,7 @@ class VideoUrlInterceptor(
 })();
     """.trimIndent()
 
-    /** JS 回调到 Java 的桥接对象(仅 WebView 用,GeckoView 走 console.log) */
+    /** JS 回调到 Java 的桥接对象 */
     private inner class JsCallback {
         @JavascriptInterface
         fun onVideo(url: String) {

@@ -7,7 +7,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.commit
-import com.tvfoxbrowser.browser.WebViewEngine
 import com.tvfoxbrowser.ui.BrowserFragment
 
 /**
@@ -15,46 +14,29 @@ import com.tvfoxbrowser.ui.BrowserFragment
  * - 托管 BrowserFragment
  * - 处理遥控器 BACK / MENU / SEARCH 按键
  * - 初始化各 Manager
- * - 初始化 GeckoRuntime(GeckoView 的全局运行时,同步创建)
  *
- * GeckoView 初始化流程(比 Crosswalk 简单):
- * 1. GeckoRuntime.create(context) 同步创建全局运行时(只创建一次)
- * 2. 每个 GeckoSession.open(runtime) 关联会话与运行时
- * 3. GeckoView.setSession(session) 关联视图与会话
+ * D-pad 方向键导航由 Android 焦点框架自动处理,无需手写。
  *
- * 海尔 HRA920L (Android 5.1) 上反复闪退,这里把 onCreate 整体包 try-catch。
+ * 海尔 HRA920L (Android 5.1) 上反复闪退,这里把 onCreate 整体包 try-catch:
+ * 任何启动期异常都会落到 CrashHandler 的日志里(由 Application 安装),
+ * 同时显示一个最简单的错误页,避免黑屏直接退出。
  */
 class MainActivity : AppCompatActivity() {
 
     private var browserFragment: BrowserFragment? = null
-    private var geckoReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
             // 初始化各 Manager(底层用 SharedPreferences + Gson)
+            // TvFoxApp.onCreate 已经初始化过一次,这里再 init 是幂等的,
+            // 防止某些 ROM 上 Application.onCreate 被跳过的情况。
             runCatching { SettingsManager.init(applicationContext) }
             runCatching { HistoryManager.init(applicationContext) }
             runCatching { BookmarkManager.init(applicationContext) }
 
             setContentView(R.layout.activity_main)
 
-            // 把 Activity 注入 WebViewEngine
-            WebViewEngine.currentActivity = this
-
-            // 初始化 GeckoRuntime(同步,失败时显示错误页)
-            WebViewEngine.onRuntimeFailed = {
-                runOnUiThread { showRuntimeError() }
-            }
-            WebViewEngine.initRuntime(applicationContext)
-            geckoReady = WebViewEngine.isRuntimeReady()
-
-            if (!geckoReady) {
-                showRuntimeError()
-                return
-            }
-
-            // GeckoRuntime 就绪,创建 BrowserFragment
             if (savedInstanceState == null) {
                 browserFragment = BrowserFragment()
                 supportFragmentManager.commit {
@@ -65,37 +47,13 @@ class MainActivity : AppCompatActivity() {
                     .findFragmentById(R.id.main_container) as? BrowserFragment
             }
         } catch (t: Throwable) {
+            // 兜底:把异常写到 CrashHandler 目录,并显示最简单的错误页。
             Log.e(TAG, "MainActivity onCreate failed", t)
             showError(t)
         }
     }
 
-    /** GeckoRuntime 初始化失败时显示错误页 */
-    private fun showRuntimeError() {
-        runOnUiThread {
-            try {
-                val container = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(48, 48, 48, 48)
-                }
-                val tv = TextView(this).apply {
-                    text = "Gecko 浏览器内核初始化失败。\n\n" +
-                        "可能原因:\n" +
-                        "1. 系统 ROM 不兼容 GeckoView 69\n" +
-                        "2. 存储空间不足(GeckoView 需要 ~60MB)\n" +
-                        "3. Android 5.1 系统库缺失\n" +
-                        "4. 设备 RAM 不足(GeckoView 至少需 500MB 可用)\n\n" +
-                        "崩溃日志:/Android/data/$packageName/files/crash/latest.txt"
-                    textSize = 14f
-                    setTextColor(0xFFFFFFFF.toInt())
-                }
-                container.addView(tv)
-                setContentView(container)
-            } catch (_: Throwable) {}
-        }
-    }
-
-    /** 启动失败时显示最简单的错误页 */
+    /** 启动失败时显示最简单的错误页(只依赖 TextView,不会再次抛异常) */
     private fun showError(t: Throwable) {
         runCatching {
             val sw = java.io.StringWriter()
@@ -126,6 +84,8 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
             KeyEvent.KEYCODE_SEARCH -> {
+                // 聚焦地址栏,便于遥控器直接输入
+                // BrowserFragment 的地址栏会通过 requestFocus 处理
                 return false
             }
         }
@@ -137,13 +97,6 @@ class MainActivity : AppCompatActivity() {
         if (browserFragment?.onBackPressed() != true) {
             @Suppress("DEPRECATION")
             super.onBackPressed()
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (WebViewEngine.currentActivity === this) {
-            WebViewEngine.currentActivity = null
         }
     }
 

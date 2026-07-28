@@ -10,9 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // GeckoView 发布在 Mozilla 自有 Maven 仓库(不在 mavenCentral!)
-        // artifact: org.mozilla.geckoview:geckoview-arm64-v8a:69.0.20190903125908
-        maven { url "https://maven.mozilla.org/maven2/" }
+        // 系统 WebView 是 Android SDK 自带,无需额外 Maven 仓库。
+        // 已移除 Mozilla Maven 仓库(GeckoView 已弃用)。
     }
 }
 rootProject.name = "TvFoxBrowser"
