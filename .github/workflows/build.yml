@@ -31,6 +31,20 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Download Crosswalk 64-bit AAR
+        run: |
+          mkdir -p app/libs
+          # 用 git clone 方式获取(Crosswalk 64bit AAR 52MB,
+          # raw.githubusercontent.com 在 CI 上下载 50MB+ 文件偶尔 SSL 失败,
+          # git clone 浅克隆更稳定)
+          git clone --depth 1 https://github.com/nviswanathan/xwalk_core_library.git /tmp/xwalk_repo
+          cp /tmp/xwalk_repo/xwalk_core_library-23.53.589.4-64bit.aar app/libs/
+          ls -la app/libs/
+          # 校验文件大小(52MB 量级,低于 40MB 视为损坏)
+          SIZE=$(stat -c%s app/libs/xwalk_core_library-23.53.589.4-64bit.aar)
+          echo "AAR size: $SIZE bytes"
+          if [ "$SIZE" -lt 40000000 ]; then echo "AAR too small, download failed"; exit 1; fi
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
