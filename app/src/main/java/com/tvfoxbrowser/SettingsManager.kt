@@ -19,10 +19,11 @@ class SettingsManager private constructor(context: Context) {
         set(value) = prefs.edit { putString(KEY_SEARCH_ENGINE, value) }
 
     /** UA 模式: mobile / desktop / tv
-     *  默认 desktop:大部分网站不识别 SmartTV UA,会回退到手机版,
-     *  用桌面 UA 拿到的网页更完整,TV 遥控器也能正常操作。 */
+     *  默认 mobile:Crosswalk 内核是 Chromium 53(2016),不支持 CSS Grid /
+     *  flex-gap / sticky 等现代特性,桌面版网站 UI 会错乱。手机版页面用更老
+     *  的 CSS(flexbox 简单布局),兼容性好很多。用户可在设置里切到 desktop。 */
     var uaMode: String
-        get() = prefs.getString(KEY_UA_MODE, UA_DESKTOP) ?: UA_DESKTOP
+        get() = prefs.getString(KEY_UA_MODE, UA_MOBILE) ?: UA_MOBILE
         set(value) = prefs.edit { putString(KEY_UA_MODE, value) }
 
     var jsEnabled: Boolean

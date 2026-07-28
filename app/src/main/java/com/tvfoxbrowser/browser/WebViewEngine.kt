@@ -189,9 +189,18 @@ object WebViewEngine {
         try {
             xWalkView.setResourceClient(object : XWalkResourceClient(xWalkView) {
                 override fun onLoadStarted(view: XWalkView?, url: String?) {
+                    val original = url.orEmpty()
+                    // URL 重写:桌面版 -> 手机版
+                    // Chromium 53 不支持现代 CSS,手机版页面兼容性好得多
+                    val rewritten = rewriteToMobile(original)
+                    if (rewritten != null && view != null && rewritten != original) {
+                        Log.d(TAG, "URL rewrite: $original -> $rewritten")
+                        view.load(rewritten, null)
+                        return
+                    }
                     callbacks.onProgressChanged(0, isLoading = true)
-                    callbacks.onUrlChanged(url.orEmpty())
-                    callbacks.onSecurityChanged(url.orEmpty().startsWith("https://"))
+                    callbacks.onUrlChanged(original)
+                    callbacks.onSecurityChanged(original.startsWith("https://"))
                 }
 
                 override fun onProgressChanged(view: XWalkView?, progressInPercent: Int) {
@@ -205,6 +214,8 @@ object WebViewEngine {
                         callbacks.onCanBackChanged(hist.canGoBack())
                         callbacks.onCanForwardChanged(hist.canGoForward())
                     }
+                    // 注入兼容性 CSS(修复 Chromium 53 不支持的现代布局)
+                    view?.let { injectCompatCss(it) }
                     // 注入视频拦截 JS(XWalkView 版本)
                     view?.let { v ->
                         synchronized(interceptors) { interceptors[v] }?.injectJs(v)
@@ -382,6 +393,80 @@ object WebViewEngine {
     /** UA 模式切换后,对所有现存 XWalkView 重新应用 */
     fun reapplyUaForAll(xWalkViews: List<XWalkView>) {
         xWalkViews.forEach { runCatching { applyUa(it) } }
+    }
+
+    /**
+     * URL 重写:把桌面版 URL 改写成手机版。
+     *
+     * 原因:Crosswalk 是 Chromium 53(2016),不支持 CSS Grid / flex-gap / sticky
+     * 等现代布局特性,桌面版网站 UI 会严重错乱。手机版页面用更老的 CSS,
+     * 兼容性好得多。
+     *
+     * 只在 UA 模式为 mobile 时生效(desktop/tv 模式尊重用户选择)。
+     * 返回 null 表示不重写。 */
+    private fun rewriteToMobile(url: String): String? {
+        if (SettingsManager.get().uaMode != SettingsManager.UA_MOBILE) return null
+        if (url.isBlank()) return null
+        // 已经是手机版(m. 开头)就不要再重写,避免无限循环
+        if (url.contains("://m.")) return null
+        return runCatching {
+            when {
+                // B站:www.bilibili.com / bilibili.com -> m.bilibili.com
+                url.contains("://www.bilibili.com") ->
+                    url.replaceFirst("://www.bilibili.com", "://m.bilibili.com")
+                url.contains("://bilibili.com") && !url.contains("://m.bilibili.com") ->
+                    url.replaceFirst("://bilibili.com", "://m.bilibili.com")
+                // 知乎:www.zhihu.com -> m.zhihu.com
+                url.contains("://www.zhihu.com") ->
+                    url.replaceFirst("://www.zhihu.com", "://m.zhihu.com")
+                // 微博:weibo.com / www.weibo.com -> m.weibo.cn
+                url.contains("://weibo.com") || url.contains("://www.weibo.com") ->
+                    url.replaceFirst("://(www\\.)?weibo\\.com".toRegex(), "://m.weibo.cn")
+                // 淘宝:www.taobao.com -> m.taobao.com
+                url.contains("://www.taobao.com") ->
+                    url.replaceFirst("://www.taobao.com", "://m.taobao.com")
+                // 京东:www.jd.com -> m.jd.com
+                url.contains("://www.jd.com") ->
+                    url.replaceFirst("://www.jd.com", "://m.jd.com")
+                else -> null
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * 注入兼容性 CSS,缓解 Chromium 53 不支持现代 CSS 导致的布局错乱。
+     *
+     * 策略:
+     * 1. 把 CSS Grid 降级为 flex/block(Chromium 53 不支持 grid)
+     * 2. 移除 flexbox gap(Chromium 53 不支持,用 margin 模拟成本太高,直接移除)
+     * 3. 把 position: sticky 降级为 relative(避免元素错位)
+     * 4. 强制 viewport 宽度适配
+     *
+     * 注:这是兜底方案,不能完全修复所有错乱。根本解法是用手机版页面。 */
+    private fun injectCompatCss(xWalkView: XWalkView) {
+        runCatching {
+            val css = """
+                (function(){
+                    if (window.__tvfoxCompatCss) return;
+                    window.__tvfoxCompatCss = true;
+                    var s = document.createElement('style');
+                    s.id = 'tvfox-compat';
+                    s.textContent = [
+                        // grid 降级:不支持 grid 的浏览器回退到 flex
+                        '[style*="display: grid"],[style*="display:grid"]{display:flex;flex-wrap:wrap}',
+                        'div[style*="grid-template"]{display:flex;flex-wrap:wrap}',
+                        // sticky 降级为 relative,避免元素悬浮错位
+                        '*{position:sticky!important;position:-webkit-sticky}',
+                        // 修复 flex-gap 不支持导致的元素重叠
+                        '[style*="gap:"]{gap:0!important}',
+                        // viewport 适配
+                        '@media screen and (max-width:980px){body{min-width:100%!important}}'
+                    ].join('\n');
+                    (document.head || document.documentElement).appendChild(s);
+                })();
+            """.trimIndent()
+            xWalkView.evaluateJavascript(css, null)
+        }
     }
 
     /** 退出当前全屏(供 BrowserFragment 在 BACK 键时调用) */
