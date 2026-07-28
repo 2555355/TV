@@ -3,13 +3,13 @@ package com.tvfoxbrowser.browser
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
-import org.xwalk.core.XWalkNavigationHistory
-import org.xwalk.core.XWalkView
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoView
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 标签页管理器。持有多个 Tab(每个对应一个 XWalkView),
- * 同一时刻只有一个 Tab 的 XWalkView 附加到容器 ViewGroup。
+ * 标签页管理器。持有多个 Tab(每个对应一个 GeckoView),
+ * 同一时刻只有一个 Tab 的 GeckoView 附加到容器 ViewGroup。
  *
  * 通过 [listener] 把 UI 相关变更回调给 BrowserFragment。
  */
@@ -39,15 +39,15 @@ class TabManager(
     fun addTab(url: String = "about:blank"): Tab {
         val tabId = idGen.getAndIncrement()
         val callbacks = SessionCallbackAggregator(tabId, this)
-        val xWalkView = WebViewEngine.createWebView(callbacks)
-        val tab = Tab(id = tabId, xWalkView = xWalkView, url = url)
+        val geckoView = WebViewEngine.createWebView(callbacks)
+        val tab = Tab(id = tabId, geckoView = geckoView, url = url)
         tabs.add(tab)
         setActive(tabs.size - 1)
         // about:home 是 UI 层虚拟 URL(由 HomeFragment 显示),
-        // about:blank 是 XWalkView 内置空页,都不需要显式 loadUrl。
-        if (xWalkView != null && url != "about:blank" && !url.startsWith("about:home")) {
-            runCatching { xWalkView.loadUrl(url) }
-                .onFailure { Log.e(TAG, "loadUrl failed", it) }
+        // about:blank 是 GeckoView 内置空页,都不需要显式 loadUri。
+        if (geckoView != null && url != "about:blank" && !url.startsWith("about:home")) {
+            runCatching { geckoView.session?.loadUri(url) }
+                .onFailure { Log.e(TAG, "loadUri failed", it) }
         }
         listener?.onTabListChanged()
         return tab
@@ -57,12 +57,14 @@ class TabManager(
     fun setActive(index: Int) {
         if (index !in tabs.indices) return
         val target = tabs[index]
-        val xwv = target.xWalkView
-        if (index == activeIndex && xwv?.parent == container) return
+        val gv = target.geckoView
+        if (index == activeIndex && gv?.parent == container) return
 
-        detachAllXWalkViews()
-        if (xwv != null) {
-            runCatching { container.addView(xwv) }
+        detachAllGeckoViews()
+        if (gv != null) {
+            // 记录原始容器,供退出全屏时恢复用
+            gv.tag = container
+            runCatching { container.addView(gv) }
                 .onFailure { Log.e(TAG, "addView failed", it) }
         }
         activeIndex = index
@@ -84,10 +86,10 @@ class TabManager(
         val idx = tabs.indexOfFirst { it.id == id }
         if (idx < 0) return
         val closing = tabs.removeAt(idx)
-        closing.xWalkView?.let { xwv ->
+        closing.geckoView?.let { gv ->
             runCatching {
-                (xwv.parent as? ViewGroup)?.removeView(xwv)
-                xwv.onDestroy()
+                (gv.parent as? ViewGroup)?.removeView(gv)
+                gv.session?.close()
             }
         }
 
@@ -107,10 +109,10 @@ class TabManager(
     /** 关闭全部,保留一个空白页 */
     fun closeAll() {
         tabs.forEach { tab ->
-            tab.xWalkView?.let { xwv ->
+            tab.geckoView?.let { gv ->
                 runCatching {
-                    (xwv.parent as? ViewGroup)?.removeView(xwv)
-                    xwv.onDestroy()
+                    (gv.parent as? ViewGroup)?.removeView(gv)
+                    gv.session?.close()
                 }
             }
         }
@@ -121,36 +123,30 @@ class TabManager(
     }
 
     fun goBack() {
-        val xwv = activeTab?.xWalkView ?: return
-        runCatching {
-            val hist = xwv.navigationHistory
-            if (hist.canGoBack()) hist.navigate(XWalkNavigationHistory.Direction.BACKWARD, 1)
-        }
+        val session = activeTab?.geckoView?.session ?: return
+        runCatching { session.goBack() }
     }
 
     fun goForward() {
-        val xwv = activeTab?.xWalkView ?: return
-        runCatching {
-            val hist = xwv.navigationHistory
-            if (hist.canGoForward()) hist.navigate(XWalkNavigationHistory.Direction.FORWARD, 1)
-        }
+        val session = activeTab?.geckoView?.session ?: return
+        runCatching { session.goForward() }
     }
 
     fun reload() {
-        activeTab?.xWalkView?.let { runCatching { it.reload(XWalkView.RELOAD_NORMAL) } }
+        activeTab?.geckoView?.session?.let { runCatching { it.reload() } }
     }
 
     fun stop() {
-        activeTab?.xWalkView?.let { runCatching { it.stopLoading() } }
+        activeTab?.geckoView?.session?.let { runCatching { it.stop() } }
     }
 
     fun loadUrl(url: String) {
         val tab = activeTab ?: addTab(url)
         tab.url = url
         if (!url.startsWith("about:home")) {
-            tab.xWalkView?.let { xwv ->
-                runCatching { xwv.loadUrl(url) }
-                    .onFailure { Log.e(TAG, "loadUrl failed", it) }
+            tab.geckoView?.session?.let { s ->
+                runCatching { s.loadUri(url) }
+                    .onFailure { Log.e(TAG, "loadUri failed", it) }
             }
         }
         listener?.onActiveTabUpdated(tab, TabField.URL)
@@ -160,11 +156,6 @@ class TabManager(
     override fun onUrlChanged(tabId: Long, url: String) {
         val tab = tabs.firstOrNull { it.id == tabId } ?: return
         tab.url = url
-        val xwv = tab.xWalkView
-        if (xwv != null) {
-            tab.canGoBack = runCatching { xwv.navigationHistory.canGoBack() }.getOrDefault(false)
-            tab.canGoForward = runCatching { xwv.navigationHistory.canGoForward() }.getOrDefault(false)
-        }
         if (tab.id == activeTab?.id) {
             listener?.onActiveTabUpdated(tab, TabField.URL)
             listener?.onActiveTabUpdated(tab, TabField.NAV)
@@ -216,10 +207,10 @@ class TabManager(
 
     fun destroy() {
         tabs.forEach { tab ->
-            tab.xWalkView?.let { xwv ->
+            tab.geckoView?.let { gv ->
                 runCatching {
-                    (xwv.parent as? ViewGroup)?.removeView(xwv)
-                    xwv.onDestroy()
+                    (gv.parent as? ViewGroup)?.removeView(gv)
+                    gv.session?.close()
                 }
             }
         }
@@ -227,11 +218,11 @@ class TabManager(
         activeIndex = -1
     }
 
-    /** 把容器里所有 XWalkView 移除(但不 destroy,保留状态用于后台标签) */
-    private fun detachAllXWalkViews() {
+    /** 把容器里所有 GeckoView 移除(但不 close,保留状态用于后台标签) */
+    private fun detachAllGeckoViews() {
         for (i in 0 until container.childCount) {
             val child = container.getChildAt(i)
-            if (child is XWalkView) {
+            if (child is GeckoView) {
                 container.removeView(child)
                 break
             }

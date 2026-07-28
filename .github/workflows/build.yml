@@ -31,19 +31,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Download Crosswalk 64-bit AAR
-        run: |
-          mkdir -p app/libs
-          # 用 git clone 方式获取(Crosswalk 64bit AAR 52MB,
-          # raw.githubusercontent.com 在 CI 上下载 50MB+ 文件偶尔 SSL 失败,
-          # git clone 浅克隆更稳定)
-          git clone --depth 1 https://github.com/nviswanathan/xwalk_core_library.git /tmp/xwalk_repo
-          cp /tmp/xwalk_repo/xwalk_core_library-23.53.589.4-64bit.aar app/libs/
-          ls -la app/libs/
-          # 校验文件大小(52MB 量级,低于 40MB 视为损坏)
-          SIZE=$(stat -c%s app/libs/xwalk_core_library-23.53.589.4-64bit.aar)
-          echo "AAR size: $SIZE bytes"
-          if [ "$SIZE" -lt 40000000 ]; then echo "AAR too small, download failed"; exit 1; fi
+      # GeckoView 依赖直接从 mavenCentral 拉取(org.mozilla.geckoview:geckoview-arm64-v8a)
+      # 无需下载本地 AAR,原 Crosswalk 下载步骤已移除。
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -67,8 +56,8 @@ jobs:
       - name: Sign Release APK
         run: |
           BUILD_DIR="app/build/outputs/apk/release"
-          # 换用系统 WebView 后,build.gradle 已禁用 ABI splits,只产出一个通用 APK:
-          #   app-release-unsigned.apk
+          # GeckoView arm64-v8a 专属包:build.gradle 用 abiFilters 锁定 arm64-v8a,
+          # 单一 APK(app-release-unsigned.apk)即可在 arm64 TV 设备运行。
           # 显式启用 v1+v2+v3 三种签名方案,兼容 Android 5+ 全部 TV 系统
           # (部分国产 ROM 只认 v1 / 只认 v2,缺失对应方案会「安装失败」)
           SRC="$BUILD_DIR/app-release-unsigned.apk"
@@ -109,16 +98,21 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v2.1-${{ github.run_number }}
-          name: TV Fox Browser v2.1 Build ${{ github.run_number }}
+          tag_name: v4.0-gecko-${{ github.run_number }}
+          name: TV Fox Browser v4.0-gecko Build ${{ github.run_number }}
           body: |
             ## TV Fox Browser 自动构建
 
-            基于 Android 系统 WebView 内核的 TV 浏览器(已弃用 GeckoView)。
+            基于 GeckoView 嵌入式内核(Gecko 69,Firefox 同款引擎)的 TV 浏览器。
+            替代原 Crosswalk(Chromium 53)方案,完整支持 CSS Grid / flex-gap / MSE,
+            解决网站 UI 错乱与 B站视频播放问题。
 
             ### 下载
             - **Debug 版本**:tv-fox-debug (artifact)
             - **Release 版本**:tv-fox-release (artifact / 下方附件)
+
+            ### 架构
+            arm64-v8a 专属包(约 60MB,含 libxul.so / libnss3.so)
 
             ### 安装方式
             1. 下载 APK 文件

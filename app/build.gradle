@@ -11,23 +11,20 @@ android {
         applicationId "com.tvfoxbrowser"
         minSdk 21
         targetSdk 34
-        versionCode 13
-        versionName "3.1-arm64"
+        versionCode 14
+        versionName "4.0-gecko-arm64"
         // 只保留中英语言资源,移除 AndroidX 自带的其他语言
         resourceConfigurations += ['zh', 'zh-rCN', 'zh-rTW', 'en']
 
         ndk {
-            // arm64 测试版本:用 nviswanathan 仓库的 64 位 AAR
-            // (含 arm64-v8a + x86_64 的 libxwalkcore.so)
-            // 原 louisgeek 32 位 AAR 只含 armeabi-v7a + x86,无法满足 arm64 设备
+            // GeckoView arm64-v8a 专属包:只含 arm64-v8a 的 libxul.so / libnss3.so 等
+            // (geckoview-arm64-v8a:69.0.20190903125908)
             abiFilters 'arm64-v8a'
         }
     }
 
     // 不再需要 ABI splits:
-    // 换用系统 WebView 后,APK 不再打包任何 native 库(GeckoView 的 libxul.so 50MB 已移除),
-    // 系统的 libwebview.so 由 ROM 提供,与 APK 无关。
-    // 单一 APK 即可在所有 CPU 架构运行,且体积很小。
+    // GeckoView arm64-v8a 专属包自带 arm64 native 库,单一 APK 即可在 arm64 设备运行。
 
     buildTypes {
         release {
@@ -88,14 +85,13 @@ dependencies {
     implementation 'androidx.preference:preference-ktx:1.2.1'
 
     // ===== 浏览器内核 =====
-    // Crosswalk 嵌入式 Chromium 内核(自带 MSE/H.264/HLS,Android 5.1 兼容)
-    // arm64 测试版本:使用 nviswanathan 仓库的 64 位 AAR(含 arm64-v8a + x86_64)
-    // CI 构建时由 workflow 下载到 app/libs/xwalk_core_library-23.53.589.4-64bit.aar
-    // 注:此版本没有 louisgeek 的无证书 https 站点修复,但 B站等正规站点证书有效,不受影响
-    implementation files('libs/xwalk_core_library-23.53.589.4-64bit.aar')
-    // Crosswalk 64bit AAR 用 files() 引用不带 POM,其内部 classes.jar 依赖旧 support-v4,
-    // 手动声明 support-v4 让 Jetifier(android.enableJetifier=true)自动改写为 androidx.*
-    implementation 'com.android.support:support-v4:28.0.0'
+    // GeckoView 嵌入式 Gecko 内核(Mozilla,Firefox 同款引擎)
+    // 替代 Crosswalk(Chromium 53 太老,不支持现代 CSS,网站 UI 错乱)
+    // GeckoView 69(2019,Gecko 69)完整支持 CSS Grid / flex-gap / sticky / MSE,
+    // 渲染兼容性远好于 Chromium 53。
+    // arm64-v8a 专属包体积约 60MB(libxul.so + libnss3.so 等)
+    // minSdk 21(Android 5.0),Java 8,无需 Java 17(那是 GeckoView 130+ 才需要)
+    implementation 'org.mozilla.geckoview:geckoview-arm64-v8a:69.0.20190903125908'
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'

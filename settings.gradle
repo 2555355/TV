@@ -10,12 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Crosswalk 嵌入式内核(官方 Intel 源已下线,用 louisgeek 镜像)
-        // louisgeek 修改版:修复无 SSL 证书 https 站点的 ERR_SECURITY_RESPONSE 异常
-        // 注意:aliyun 镜像 (code.aliyun.com) 在 GitHub Actions runner 上 DNS 解析失败,
-        //       必须用 raw.githubusercontent.com 这个仓库(louisgeek/xwalk_core_library)。
-        //       不要写成 louisgeek/maven —— 那是个空仓库,只有 README。
-        maven { url "https://raw.githubusercontent.com/louisgeek/xwalk_core_library/master" }
+        // GeckoView 发布在 mavenCentral(org.mozilla.geckoview:geckoview-arm64-v8a)
+        // 无需额外镜像。原 Crosswalk 的 louisgeek 镜像已弃用。
     }
 }
 rootProject.name = "TvFoxBrowser"

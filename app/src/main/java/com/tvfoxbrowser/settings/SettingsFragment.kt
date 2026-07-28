@@ -52,10 +52,10 @@ class SettingsFragment : DialogFragment() {
         tabManager = tm
     }
 
-    /** UA 模式变更后,对所有现存 XWalkView 重新应用 */
+    /** UA 模式变更后,对所有现存 GeckoView 重新应用 */
     fun reapplyUaOnAllTabs() {
         tabManager?.allTabs?.forEach { tab ->
-            tab.xWalkView?.let { WebViewEngine.applyUa(it) }
+            tab.geckoView?.let { WebViewEngine.applyUa(it) }
         }
     }
 
