@@ -248,9 +248,9 @@ object WebViewEngine {
                     callbacks.onProgressChanged(progress, isLoading = progress in 1..99)
                 }
 
-                override fun onPageStart(session: GeckoSession, url: String?) {
+                override fun onPageStart(session: GeckoSession, url: String) {
                     callbacks.onProgressChanged(0, isLoading = true)
-                    callbacks.onUrlChanged(url.orEmpty())
+                    callbacks.onUrlChanged(url)
                 }
 
                 override fun onPageStop(session: GeckoSession, success: Boolean) {
@@ -262,9 +262,11 @@ object WebViewEngine {
                 }
 
                 override fun onSecurityChange(
-                    session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation?
+                    session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation
                 ) {
-                    callbacks.onSecurityChanged(securityInfo?.isSecure == true)
+                    // ProgressDelegate.onPageStart/onSecurityChange 参数标注 @NonNull,
+                    // Kotlin 覆盖时必须用非空类型(不能用 String? / SecurityInformation?)。
+                    callbacks.onSecurityChanged(securityInfo.isSecure)
                 }
             }
         } catch (t: Throwable) {
