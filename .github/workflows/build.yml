@@ -56,8 +56,8 @@ jobs:
       - name: Sign Release APK
         run: |
           BUILD_DIR="app/build/outputs/apk/release"
-          # GeckoView arm64-v8a 专属包:build.gradle 用 abiFilters 锁定 arm64-v8a,
-          # 单一 APK(app-release-unsigned.apk)即可在 arm64 TV 设备运行。
+          # GeckoView armeabi-v7a 专属包:build.gradle 用 abiFilters 锁定 armeabi-v7a,
+          # 单一 APK(app-release-unsigned.apk)即可在 32 位 armv7 TV 设备运行。
           # 显式启用 v1+v2+v3 三种签名方案,兼容 Android 5+ 全部 TV 系统
           # (部分国产 ROM 只认 v1 / 只认 v2,缺失对应方案会「安装失败」)
           SRC="$BUILD_DIR/app-release-unsigned.apk"
@@ -112,7 +112,8 @@ jobs:
             - **Release 版本**:tv-fox-release (artifact / 下方附件)
 
             ### 架构
-            arm64-v8a 专属包(约 60MB,含 libxul.so / libnss3.so)
+            armeabi-v7a 专属包(约 45MB,含 libxul.so / libnss3.so 等)
+            目标设备:海尔 HRA920L (Android 5.1, ro.product.cpu.abi = armeabi-v7a)
 
             ### 安装方式
             1. 下载 APK 文件
